@@ -1,6 +1,6 @@
 <!-- SPECKIT START -->
-Active Spec Kit feature: 015-solver-spine-hardening
-Plan: specs/015-solver-spine-hardening/plan.md
+Active Spec Kit feature: 017-fix-atom-bond-node-identity
+Plan: specs/017-fix-atom-bond-node-identity/plan.md
 <!-- SPECKIT END -->
 
 <!-- Hand-maintained; keep OUTSIDE the SPECKIT markers (Spec Kit rewrites that block). -->
