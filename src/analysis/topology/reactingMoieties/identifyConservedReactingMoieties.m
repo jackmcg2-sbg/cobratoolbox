@@ -318,21 +318,25 @@ ATM.Edges.orientationATM2dATM = orientationATM2dATM;
 
 %update the ATM Trans, HeadIndex, TailIndex, HeadAtom and TailAtom to match
 %any reorientation of EndNodes
-for i=1:nTransInstances
-    if orientationATM2dATM(i)==1
-        %remove the reaction prefix from the Transition name
-        [~,rem]=strtok(ATM.Edges.Trans{i},'#');
-        ATM.Edges.Trans{i}=rem(2:end);
-    else
-        ATM.Edges.HeadAtomIndex(i) = ATM.Edges.EndNodes(i,2);
-        ATM.Edges.TailAtomIndex(i) = ATM.Edges.EndNodes(i,1);
-        HeadAtom = ATM.Edges.TailAtom{i};
-        TailAtom = ATM.Edges.HeadAtom{i};
-        ATM.Edges.HeadAtom{i} = HeadAtom;
-        ATM.Edges.TailAtom{i} = TailAtom;
-        ATM.Edges.Trans{i} = [HeadAtom '#' TailAtom];
-    end
-end
+% Any row that is not forward-oriented takes the reverse branch, including
+% orientation 0 rows when sanityChecks is off, exactly as the per-row loop did.
+forwardOriented = orientationATM2dATM == 1;
+reverseOriented = ~forwardOriented;
+
+%remove the reaction prefix from the Transition name
+[~, transRemainder] = cellfun(@(transName) strtok(transName, '#'), ...
+    ATM.Edges.Trans(forwardOriented), 'UniformOutput', false);
+ATM.Edges.Trans(forwardOriented) = cellfun(@(remainder) remainder(2:end), ...
+    transRemainder, 'UniformOutput', false);
+
+ATM.Edges.HeadAtomIndex(reverseOriented) = ATM.Edges.EndNodes(reverseOriented, 2);
+ATM.Edges.TailAtomIndex(reverseOriented) = ATM.Edges.EndNodes(reverseOriented, 1);
+reorientedHeadAtom = ATM.Edges.TailAtom(reverseOriented);
+reorientedTailAtom = ATM.Edges.HeadAtom(reverseOriented);
+ATM.Edges.HeadAtom(reverseOriented) = reorientedHeadAtom;
+ATM.Edges.TailAtom(reverseOriented) = reorientedTailAtom;
+ATM.Edges.Trans(reverseOriented) = cellfun(@(headAtom, tailAtom) [headAtom '#' tailAtom], ...
+    reorientedHeadAtom, reorientedTailAtom, 'UniformOutput', false);
 
 if sanityChecks
     %boolean of edges whose orientation is the same
