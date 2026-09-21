@@ -66,11 +66,21 @@ function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(mod
 %                compatibility; automatically falls back to the
 %                open-source path (with a warning) if the required
 %                toolbox is not licensed on this machine.
+%                * .conservedMoietiesOnly {(0),1} false (default) to compute
+%                both conserved and reacting moieties as before. Set to true
+%                to compute only conserved moieties: the function returns
+%                after populating `arm` and `moietyFormulae`, and skips the
+%                entire reacting-moiety bond-graph/minimum-set-cover section
+%                (BG is still a required input but is not processed). This
+%                mode does not require a MILP solver.
 %
 % OUTPUTS:
 %    arm:               atomically resolved model as a matlab structure (fields detailed below)
 %    moietyFormulae:    `nIsomorphismClasses x 1` cell array of conserved-moiety chemical formulae in Hill notation
-%    reacting:          structure of reacting-moiety results derived from `BG` and `dATM`
+%    reacting:          structure of reacting-moiety results derived from `BG` and `dATM`;
+%                       when `options.conservedMoietiesOnly` is true, this is instead
+%                       `struct('computed', false)`, signalling that reacting-moiety
+%                       analysis was not performed
 %
 % arm            atomically resolved model as a matlab structure with the following fields:
 %
@@ -209,6 +219,16 @@ if ~isfield(options,'useOpenSourceMoietyTools')
 end
 useOpenSourceMoietyTools = options.useOpenSourceMoietyTools;
 
+if ~isfield(options,'conservedMoietiesOnly')
+    % Default false: compute both conserved and reacting moieties, as
+    % before. Set to true to compute only conserved moieties (arm,
+    % moietyFormulae) and skip the reacting-moiety bond-graph/minimum-
+    % set-cover section entirely; this mode does not require a MILP
+    % solver. See OPTIONAL INPUTS above.
+    options.conservedMoietiesOnly = false;
+end
+conservedMoietiesOnly = options.conservedMoietiesOnly;
+
 bool = contains(model.mets,'#');
 if any(bool)
     error('No metabolite can have an id with a # character in it.')
@@ -298,21 +318,25 @@ ATM.Edges.orientationATM2dATM = orientationATM2dATM;
 
 %update the ATM Trans, HeadIndex, TailIndex, HeadAtom and TailAtom to match
 %any reorientation of EndNodes
-for i=1:nTransInstances
-    if orientationATM2dATM(i)==1
-        %remove the reaction prefix from the Transition name
-        [~,rem]=strtok(ATM.Edges.Trans{i},'#');
-        ATM.Edges.Trans{i}=rem(2:end);
-    else
-        ATM.Edges.HeadAtomIndex(i) = ATM.Edges.EndNodes(i,2);
-        ATM.Edges.TailAtomIndex(i) = ATM.Edges.EndNodes(i,1);
-        HeadAtom = ATM.Edges.TailAtom{i};
-        TailAtom = ATM.Edges.HeadAtom{i};
-        ATM.Edges.HeadAtom{i} = HeadAtom;
-        ATM.Edges.TailAtom{i} = TailAtom;
-        ATM.Edges.Trans{i} = [HeadAtom '#' TailAtom];
-    end
-end
+% Any row that is not forward-oriented takes the reverse branch, including
+% orientation 0 rows when sanityChecks is off, exactly as the per-row loop did.
+forwardOriented = orientationATM2dATM == 1;
+reverseOriented = ~forwardOriented;
+
+%remove the reaction prefix from the Transition name
+[~, transRemainder] = cellfun(@(transName) strtok(transName, '#'), ...
+    ATM.Edges.Trans(forwardOriented), 'UniformOutput', false);
+ATM.Edges.Trans(forwardOriented) = cellfun(@(remainder) remainder(2:end), ...
+    transRemainder, 'UniformOutput', false);
+
+ATM.Edges.HeadAtomIndex(reverseOriented) = ATM.Edges.EndNodes(reverseOriented, 2);
+ATM.Edges.TailAtomIndex(reverseOriented) = ATM.Edges.EndNodes(reverseOriented, 1);
+reorientedHeadAtom = ATM.Edges.TailAtom(reverseOriented);
+reorientedTailAtom = ATM.Edges.HeadAtom(reverseOriented);
+ATM.Edges.HeadAtom(reverseOriented) = reorientedHeadAtom;
+ATM.Edges.TailAtom(reverseOriented) = reorientedTailAtom;
+ATM.Edges.Trans(reverseOriented) = cellfun(@(headAtom, tailAtom) [headAtom '#' tailAtom], ...
+    reorientedHeadAtom, reorientedTailAtom, 'UniformOutput', false);
 
 if sanityChecks
     %boolean of edges whose orientation is the same
@@ -1457,6 +1481,15 @@ arm.M2R = M2R; % Matrix to map moiety transitions to reactions. Multiple moiety 
 
 arm.MG=MG; % (undirected) moiety graph (chemical structure of each moiety instance) (Hadjar)
 arm.L =  L;    % Matrix to map isomorphism classes to metabolites. L = I2M*M2M'; Multiple isomorphism classes can map to multiple metabolites.
+
+if conservedMoietiesOnly
+    % Conserved-moiety computation is complete; skip the reacting-moiety
+    % bond-graph/minimum-set-cover section entirely (no MILP solver is
+    % invoked in this mode). `reacting` is returned as an explicit
+    % "not computed" marker rather than partial/stale data.
+    reacting = struct('computed', false);
+    return;
+end
 
 %% Reacting moiety (bond-level) analysis  % Hadjar
 %
