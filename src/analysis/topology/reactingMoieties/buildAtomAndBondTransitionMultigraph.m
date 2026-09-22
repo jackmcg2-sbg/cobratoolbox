@@ -143,6 +143,10 @@ function [dATM, metAtomMappedBool, rxnAtomMappedBool, M2Ai, Ti2R, dATME, BG, dBT
 %    BTiE:               incidence matrix of the directed bond transition multigraph (`incidence(dBTM)`)
 
 % .. Authors: - Ronan M. T. Fleming, 2022, Hadjar Rahou 2022 (Bond section)
+%             - COBRA Toolbox, 2026: the bond loop hands its parsed RXN file to
+%               addBondMappingsRXNFile instead of having it read again, and
+%               dBTM.Nodes.BondElmts is filled in one assignment; outputs unchanged
+%               (feature 20260921-160105-build-function-runtime).
 
 if ~exist('options','var')
     options=[];
@@ -634,7 +638,7 @@ for i = 1:nRxns
     if rbool(i)
         try
             [atoms,bonds] = readABRXNFile(model.rxns{i},RXNFileDir);
-            [bondMappings] = addBondMappingsRXNFile(model.rxns{i},RXNFileDir);
+            [bondMappings] = addBondMappingsRXNFile(model.rxns{i},RXNFileDir,atoms,bonds);
             % record each metabolite's true bond count (one instance only) the first time it is seen
             firstInstanceBondMets = unique(bonds.mets(bonds.instances==1));
             for bMetIdx = 1:numel(firstInstanceBondMets)
@@ -806,10 +810,15 @@ HeadBondTailAtom(find(cellfun(@isempty,HeadBondTailAtom)))=TailBondTailAtom(find
 BondTailAtom=HeadBondTailAtom;
 dBTM.Nodes = addvars(dBTM.Nodes,Bond,BondIndex,BondElmts,BondHeadAtom,BondTailAtom,BondHeadAtomIndex,BondTailAtomIndex,Met,BondType,'NewVariableNames',{'Bond','BondIndex','BondElmts','BondHeadAtom','BondTailAtom','BondHeadAtomIndex','BondTailAtomIndex','mets','BondType'});
 %Add bond Elements
-for i=1:size(dBTM.Nodes,1)
-    bondTail=dBTM.Nodes.BondHeadAtomIndex(i);
-    bondHead=dBTM.Nodes.BondTailAtomIndex(i);
-    dBTM.Nodes.BondElmts(i)={[dATME.Nodes.Element{bondTail} '-' dATME.Nodes.Element{bondHead}]};
+% One assignment of the whole column instead of one node-table write per bond (FR-004).
+% Each string is the element at BondHeadAtomIndex, '-', then the element at
+% BondTailAtomIndex, exactly as the previous per-bond loop built it; an invalid index
+% still raises an indexing error. With no bond nodes, dATME is not touched, as before.
+if height(dBTM.Nodes) > 0
+    bondElementList = dATME.Nodes.Element;
+    bondHeadElmts = bondElementList(full(dBTM.Nodes.BondHeadAtomIndex(:)));
+    bondTailElmts = bondElementList(full(dBTM.Nodes.BondTailAtomIndex(:)));
+    dBTM.Nodes.BondElmts = cellfun(@(a, b) [a '-' b], bondHeadElmts, bondTailElmts, 'UniformOutput', false);
 end
 
 
