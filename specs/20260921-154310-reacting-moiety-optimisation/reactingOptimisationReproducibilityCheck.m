@@ -618,5 +618,334 @@ end
 %% ---------------------------------------------------------------------------
 
 function runSyntheticReindexingSection(resultsPath, icrmFile, repoRoot) %#ok<INUSD>
-error('reactingOptimisationCheck:notImplemented', 'not yet implemented: T022');
+% Runs verbatim copies of the ORIGINAL and OPTIMISED stage-14a, stage-14b and STEP-3 blocks
+% of identifyConservedReactingMoieties.m on hand-built inputs covering the cases the
+% fixtures do not contain: zero rows, exactly one row, a missing BondIndex, an untouched
+% bond, and inputs that force each optimised block onto its fallback (tasks.md T022).
+% The copies check semantics only; the fixture runs are the proof of the shipped code.
+
+% Guard: the optimised copies below must still match the shipped source, line for line.
+icrmText = fileread(icrmFile);
+keyLines = { ...
+    '[~, newEndNodes] = ismember(full(edgeTable.EndNodes), full(nodeTable.AtomIndex));', ...
+    'endpointComponents = reshape(RBG.Nodes.Component(rbgEndNodes), size(rbgEndNodes));', ...
+    '[~, endNodesModified] = ismember(full(endpointComponents), full(uniqueComponents));', ...
+    'atomToRxn = spones(sparse([headATM(validTr); tailATM(validTr)], ...', ...
+    'CRB2R = sparse(foundIdx(touchRow), touchCol, 1, nCRB, nRxns);'};
+for k = 1:numel(keyLines)
+    assert(contains(icrmText, keyLines{k}), 'reactingOptimisationCheck:syntheticCopyDrift', ...
+        'Optimised block line not found verbatim in %s: %s', icrmFile, keyLines{k});
+end
+
+cases = syntheticReindexingCases();
+fid = fopen(resultsPath, 'a');
+fprintf(fid, ['\n### Synthetic re-indexing section — %s UTC\n\n' ...
+    '| Case | Block | Original outcome | Optimised outcome | Result |\n|---|---|---|---|---|\n'], ...
+    char(datetime('now', 'TimeZone', 'UTC', 'Format', 'yyyy-MM-dd HH:mm')));
+allEqual = true;
+for c = 1:numel(cases)
+    original = runSyntheticBlock(cases(c), true);
+    optimised = runSyntheticBlock(cases(c), false);
+    if strcmp(original.outcome, 'ok') && strcmp(optimised.outcome, 'ok')
+        isSame = compareStrictly(original.value, optimised.value, 'value') ...
+            && strcmp(original.warningText, optimised.warningText);
+    else
+        isSame = strcmp(original.outcome, optimised.outcome) ...
+            && strcmp(original.errorIdentifier, optimised.errorIdentifier) ...
+            && strcmp(original.errorMessage, optimised.errorMessage);
+    end
+    allEqual = allEqual && isSame;
+    fprintf(fid, '| %d. %s | %s | %s | %s | %s |\n', c, cases(c).name, cases(c).block, ...
+        describeSyntheticOutcome(original), describeSyntheticOutcome(optimised), ...
+        ternary(isSame, 'EQUAL', 'DIFF'));
+    fprintf('  synthetic %2d %-34s %s\n', c, cases(c).name, ternary(isSame, 'EQUAL', 'DIFF'));
+end
+fclose(fid);
+assert(allEqual, 'reactingOptimisationCheck:syntheticMismatch', ...
+    'An optimised block differs from the original on at least one synthetic case; see %s', resultsPath);
+end
+
+function text = describeSyntheticOutcome(result)
+if strcmp(result.outcome, 'ok')
+    text = sprintf('ok, %s %s%s', class(result.value), mat2str(size(result.value)), ...
+        ternary(isempty(result.warningText), '', [', warning: ' result.warningText]));
+else
+    text = sprintf('error %s', result.errorIdentifier);
+end
+end
+
+function result = runSyntheticBlock(syntheticCase, useOriginal)
+result = struct('outcome', 'ok', 'value', [], 'warningText', '', 'errorIdentifier', '', ...
+    'errorMessage', '');
+lastwarn('');
+try
+    in = syntheticCase.inputs;
+    switch syntheticCase.block
+        case '14a'
+            if useOriginal
+                result.value = rbgEndNodesOriginal(in.edgeTable, in.nodeTable);
+            else
+                result.value = rbgEndNodesOptimised(in.edgeTable, in.nodeTable);
+            end
+        case '14b'
+            if useOriginal
+                result.value = condensedEndNodesOriginal(in.RBG, in.uniqueComponents, in.componentTable);
+            else
+                result.value = condensedEndNodesOptimised(in.RBG, in.uniqueComponents, in.componentTable);
+            end
+        case 'STEP3'
+            if useOriginal
+                result.value = crb2rOriginal(in.bondIdx, in.bondRowMap, in.atom1_all, in.atom2_all, ...
+                    in.headATM, in.tailATM, in.rxnCols, in.nCRB, in.nRxns, in.maxBondIndex);
+            else
+                result.value = crb2rOptimised(in.bondIdx, in.bondRowMap, in.atom1_all, in.atom2_all, ...
+                    in.headATM, in.tailATM, in.rxnCols, in.nCRB, in.nRxns, in.maxBondIndex);
+            end
+    end
+    result.warningText = lastwarn();
+catch ME
+    result.outcome = 'error';
+    result.errorIdentifier = ME.identifier;
+    result.errorMessage = ME.message;
+    fprintf('    (%s copy raised %s: %s at %s:%d)\n', ternary(useOriginal, 'original', 'optimised'), ...
+        ME.identifier, ME.message, ME.stack(1).name, ME.stack(1).line);
+end
+end
+
+function cases = syntheticReindexingCases()
+cases = struct('name', {}, 'block', {}, 'inputs', {});
+
+% stage 14b: RBG on atoms, with NewId = 1:n, and its component table
+cases(end + 1) = struct('name', 'condensed RBG, one edge', 'block', '14b', ...
+    'inputs', condensedInputs([5; 9], [1 2]));
+cases(end + 1) = struct('name', 'condensed RBG, three edges', 'block', '14b', ...
+    'inputs', condensedInputs([3; 7; 7; 11], [1 2; 2 3; 3 4]));
+cases(end + 1) = struct('name', 'condensed RBG, zero edges', 'block', '14b', ...
+    'inputs', condensedInputs([3; 7], zeros(0, 2)));
+
+% stage 14a: reacting-bond edge table on atom indices, and the node table of its end atoms
+cases(end + 1) = struct('name', 'RBG re-index, zero edges', 'block', '14a', 'inputs', ...
+    struct('edgeTable', table(zeros(0, 2), 'VariableNames', {'EndNodes'}), ...
+    'nodeTable', table(zeros(0, 1), 'VariableNames', {'AtomIndex'})));
+cases(end + 1) = struct('name', 'RBG re-index, one edge', 'block', '14a', 'inputs', ...
+    struct('edgeTable', table([20 10], 'VariableNames', {'EndNodes'}), ...
+    'nodeTable', table([10; 20], 'VariableNames', {'AtomIndex'})));
+
+% STEP 3: bonds 1 and 3 exist in BG (atoms 1-2 and 7-8); bond 2 does not
+bgBondIndex = [1; 3];
+bgEndNodes = [1 2; 7 8];
+cases(end + 1) = struct('name', 'CRB2R, zero condensed bonds', 'block', 'STEP3', ...
+    'inputs', crb2rInputs(zeros(0, 1), bgBondIndex, bgEndNodes, [1; 5], [2; 6], [1; 2], 2));
+cases(end + 1) = struct('name', 'CRB2R, BondIndex not found', 'block', 'STEP3', ...
+    'inputs', crb2rInputs([1; 2; 3], bgBondIndex, bgEndNodes, [1; 5; 2], [2; 6; 9], [1; 2; 0], 3));
+cases(end + 1) = struct('name', 'CRB2R, untouched bond (zero row)', 'block', 'STEP3', ...
+    'inputs', crb2rInputs([1; 3], bgBondIndex, bgEndNodes, [1; 5], [2; 6], [1; 2], 2));
+
+% fallback triggers
+cases(end + 1) = struct('name', 'condensed RBG, NaN component', 'block', '14b', ...
+    'inputs', condensedInputs([NaN; 4], [1 2]));
+cellInputs = crb2rInputs([1; 3], bgBondIndex, bgEndNodes, [1; 5], [2; 6], [1; 2], 2);
+cellInputs.headATM = num2cell(cellInputs.headATM);
+cases(end + 1) = struct('name', 'CRB2R, headATM as a cell array', 'block', 'STEP3', ...
+    'inputs', cellInputs);
+end
+
+function in = condensedInputs(components, endNodes)
+% Builds RBG, uniqueComponents and componentTable exactly as the source does.
+nodeTable = table((101:100 + numel(components))', components, ...
+    'VariableNames', {'AtomIndex', 'Component'});
+edgeTable = table(endNodes, 'VariableNames', {'EndNodes'});
+RBG = graph(edgeTable, nodeTable);
+RBG.Nodes.NewId = (1:size(RBG.Nodes, 1))';
+uniqueComponents = unique(RBG.Nodes.Component);
+newIds = (1:length(uniqueComponents))';
+componentTable = table(uniqueComponents, newIds, 'VariableNames', {'Component', 'NewId'});
+in = struct('RBG', RBG, 'uniqueComponents', uniqueComponents, 'componentTable', componentTable);
+end
+
+function in = crb2rInputs(bondIdx, allBondIndex, bgEndNodes, headATM, tailATM, rxnCols, nRxns)
+% Builds the STEP-2 lookup (bondRowMap) exactly as the source does.
+atom1_all = bgEndNodes(:, 1);
+atom2_all = bgEndNodes(:, 2);
+maxBondIndex = max(allBondIndex);
+bondRowMap = zeros(maxBondIndex, 1);
+for r = 1:numel(allBondIndex)
+    bIdx = allBondIndex(r);
+    if bondRowMap(bIdx) == 0
+        bondRowMap(bIdx) = r;
+    end
+end
+in = struct('bondIdx', bondIdx, 'bondRowMap', bondRowMap, 'atom1_all', atom1_all, ...
+    'atom2_all', atom2_all, 'headATM', headATM, 'tailATM', tailATM, 'rxnCols', rxnCols, ...
+    'nCRB', length(bondIdx), 'nRxns', nRxns, 'maxBondIndex', maxBondIndex);
+end
+
+% ----- verbatim copies of the pre-change blocks (git show develop:<ICRM>) -----
+
+function newEndNodes = rbgEndNodesOriginal(edgeTable, nodeTable)
+newEndNodes = zeros(size(edgeTable, 1), 2);
+% Update the EndNodes by finding the new positions in the nodeTable
+for i = 1:size(edgeTable, 1)
+    % Find the new position for the first node (EndNodes1) in the edgeTable
+    newEndNodes(i, 1) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,1));
+
+    % Find the new position for the second node (EndNodes2) in the edgeTable
+    newEndNodes(i, 2) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,2));
+end
+end
+
+function endNodesModified = condensedEndNodesOriginal(RBG, uniqueComponents, componentTable) %#ok<INUSL>
+ % Initialize the new EndNodes vector
+endNodesModified = zeros(size(RBG.Edges.EndNodes));
+
+% Loop over all edges in RBG to replace the EndNodes with the Component values
+for i = 1:size(RBG.Edges.EndNodes, 1)
+    % Get the current edge's EndNode(s)
+    currentEndNode = RBG.Edges.EndNodes(i, :);
+
+    % Replace each EndNode with the corresponding Component value from ATG
+    for j = 1:2
+        % Find the index of the node in ATG whose AtomIndex matches the EndNode
+        idx = find(RBG.Nodes.NewId == currentEndNode(j));
+
+        % If the index is found, replace the EndNode with the Component value
+        if ~isempty(idx)
+            component=RBG.Nodes.Component(idx);
+            endNodesModified(i, j) = componentTable.NewId(componentTable.Component==component);
+        end
+    end
+end
+end
+
+function CRB2R = crb2rOriginal(bondIdx, bondRowMap, atom1_all, atom2_all, headATM, tailATM, ...
+    rxnCols, nCRB, nRxns, maxBondIndex) %#ok<INUSD>
+CRB2R = sparse(nCRB, nRxns);
+for i = 1:nCRB
+    b = bondIdx(i);
+
+    % Lookup BG edge row
+    row = bondRowMap(b);
+    if row == 0
+        warning('BondIndex %d not found.', b);
+        continue;
+    end
+
+    a1 = atom1_all(row);
+    a2 = atom2_all(row);
+
+    % Find transitions involving either atom
+    involved = (headATM == a1 | tailATM == a1 | ...
+                headATM == a2 | tailATM == a2);
+
+    cols = unique(rxnCols(involved));
+    CRB2R(i, cols(cols>0)) = 1;
+end
+end
+
+% ----- verbatim copies of the optimised blocks shipped in <ICRM> (T019, T020, T021) -----
+
+function newEndNodes = rbgEndNodesOptimised(edgeTable, nodeTable)
+% Update the EndNodes to their positions in the nodeTable. nodeTable.AtomIndex is
+% unique, so the first-match location from ismember is the position find() returns.
+[~, newEndNodes] = ismember(full(edgeTable.EndNodes), full(nodeTable.AtomIndex));
+if numel(unique(nodeTable.AtomIndex)) ~= height(nodeTable) || any(newEndNodes(:) == 0)
+    % Duplicated or missing atom indices: use the original per-edge search, which
+    % reports such inputs exactly as it always has
+    newEndNodes = zeros(size(edgeTable, 1), 2);
+    % Update the EndNodes by finding the new positions in the nodeTable
+    for i = 1:size(edgeTable, 1)
+        % Find the new position for the first node (EndNodes1) in the edgeTable
+        newEndNodes(i, 1) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,1));
+    
+        % Find the new position for the second node (EndNodes2) in the edgeTable
+        newEndNodes(i, 2) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,2));
+    end
+end
+end
+
+function endNodesModified = condensedEndNodesOptimised(RBG, uniqueComponents, componentTable) %#ok<INUSD>
+% Replace each EndNode with the NewId of its node's Component. RBG.Nodes.NewId is
+% 1:numnodes, so an EndNode is already its node's row, and componentTable.NewId is the
+% position of the Component in the sorted uniqueComponents. The reshape keeps the
+% EndNodes shape when there is exactly one edge (indexing a column vector with a 1-by-2
+% index would otherwise return a 2-by-1 result).
+rbgEndNodes = RBG.Edges.EndNodes;
+if isnumeric(rbgEndNodes)
+    endpointComponents = reshape(RBG.Nodes.Component(rbgEndNodes), size(rbgEndNodes));
+    [~, endNodesModified] = ismember(full(endpointComponents), full(uniqueComponents));
+else
+    endNodesModified = [];
+end
+if ~isnumeric(rbgEndNodes) || any(endNodesModified(:) == 0)
+    % Non-numeric end nodes or unmatched components: use the original per-edge search
+    % Initialize the new EndNodes vector
+    endNodesModified = zeros(size(RBG.Edges.EndNodes));
+
+    % Loop over all edges in RBG to replace the EndNodes with the Component values
+    for i = 1:size(RBG.Edges.EndNodes, 1)
+        % Get the current edge's EndNode(s)
+        currentEndNode = RBG.Edges.EndNodes(i, :);
+    
+        % Replace each EndNode with the corresponding Component value from ATG
+        for j = 1:2
+            % Find the index of the node in ATG whose AtomIndex matches the EndNode
+            idx = find(RBG.Nodes.NewId == currentEndNode(j));
+        
+            % If the index is found, replace the EndNode with the Component value
+            if ~isempty(idx)
+                component=RBG.Nodes.Component(idx);
+                endNodesModified(i, j) = componentTable.NewId(componentTable.Component==component);
+            end
+        end
+    end
+end
+end
+
+function CRB2R = crb2rOptimised(bondIdx, bondRowMap, atom1_all, atom2_all, headATM, tailATM, ...
+    rxnCols, nCRB, nRxns, maxBondIndex)
+CRB2R = sparse(nCRB, nRxns);
+% Build CRB2R from a sparse atom -> reaction incidence: row i holds the reactions with
+% an atom transition that touches either end atom of condensed reacting bond i. This
+% replaces a scan of every atom transition for every bond. The original per-bond loop
+% is kept for inputs whose indices are not positive whole numbers.
+isPositiveWholeNumeric = @(v) isnumeric(v) && all(v(:) >= 1) && all(v(:) == fix(v(:)));
+if isPositiveWholeNumeric(atom1_all) && isPositiveWholeNumeric(atom2_all) ...
+        && isPositiveWholeNumeric(headATM) && isPositiveWholeNumeric(tailATM) ...
+        && isPositiveWholeNumeric(bondIdx) && all(bondIdx <= maxBondIndex)
+    rowsInBG = bondRowMap(bondIdx);
+    foundInBG = rowsInBG > 0;
+    for iMissing = find(~foundInBG)'
+        warning('BondIndex %d not found.', bondIdx(iMissing));
+    end
+    validTr = rxnCols > 0;
+    nAtomsMax = max([0; atom1_all(:); atom2_all(:); headATM(:); tailATM(:)]);
+    atomToRxn = spones(sparse([headATM(validTr); tailATM(validTr)], ...
+        [rxnCols(validTr); rxnCols(validTr)], 1, nAtomsMax, nRxns));
+    foundIdx = find(foundInBG);
+    touch = atomToRxn(atom1_all(rowsInBG(foundIdx)), :) + atomToRxn(atom2_all(rowsInBG(foundIdx)), :);
+    [touchRow, touchCol] = find(touch);
+    CRB2R = sparse(foundIdx(touchRow), touchCol, 1, nCRB, nRxns);
+else
+    for i = 1:nCRB
+        b = bondIdx(i);
+
+        % Lookup BG edge row
+        row = bondRowMap(b);
+        if row == 0
+            warning('BondIndex %d not found.', b);
+            continue;
+        end
+
+        a1 = atom1_all(row);
+        a2 = atom2_all(row);
+
+        % Find transitions involving either atom
+        involved = (headATM == a1 | tailATM == a1 | ...
+                    headATM == a2 | tailATM == a2);
+
+        cols = unique(rxnCols(involved));
+        CRB2R(i, cols(cols>0)) = 1;
+    end
+end
+
 end

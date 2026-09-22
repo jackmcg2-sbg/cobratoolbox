@@ -75,3 +75,165 @@ reproduce:
     rewrite.
 - T008: `testConservedReactingMoieties.m` **passes** on unmodified `src/` (gurobi, R2024b), which is the
   SC-002 baseline.
+
+### US3 tests on unmodified code (T012)
+
+- `testExtractBondSubgraphs.m`: **PASS** on unmodified `src/`, covering the CI case and the 5 fallback cases.
+- `testFindAndExtractMolecularGraphs.m`: **PASS** on unmodified `src/` (three-input form).
+- CI selection dry run: `python3 .github/scripts/select_tests.py --changed <file listing extractBondSubgraphs.m>`
+  gives `mode=selective`, 10/282 tests selected, including `testExtractBondSubgraphs`,
+  `testFindAndExtractMolecularGraphs` and `testConservedReactingMoieties`.
+
+### Run 2026-09-22 09:18 UTC — fixtures: ci,tyr,bileacid; modes: default,conservedOnly (timing gate off)
+
+| Fixture | Mode | Run | Status | arm eq | moietyFormulae eq | reacting eq (differing fields) | console eq | median s before -> after (ratio) | targeted stages s before -> after | Solver | Corpus (.rxn) | Snapshot | Commit | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ci | default | COMPARE | TIMING (not gated) | yes | yes | yes | yes | 0.17 -> 0.23 (0.72x) | - | gurobi | 18 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| ci | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 18 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| tyr | default | COMPARE | EQUAL | yes | yes | yes | yes | 15.66 -> 10.20 (1.54x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| tyr | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| bileacid | default | COMPARE | EQUAL | yes | yes | yes | yes | 45.96 -> 28.63 (1.61x) | 09: 42.32 -> 21.57; 14-17: 4.14 -> 3.86 (profiled, relative) | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| bileacid | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+
+### Synthetic re-indexing section — 2026-09-22 09:25 UTC
+
+| Case | Block | Original outcome | Optimised outcome | Result |
+|---|---|---|---|---|
+| 1. condensed RBG, one edge | 14b | ok, double [1 2] | ok, double [1 2] | EQUAL |
+| 2. condensed RBG, three edges | 14b | ok, double [3 2] | ok, double [3 2] | EQUAL |
+| 3. condensed RBG, zero edges | 14b | ok, double [0 2] | ok, double [0 2] | EQUAL |
+| 4. RBG re-index, zero edges | 14a | ok, double [0 2] | ok, double [0 2] | EQUAL |
+| 5. RBG re-index, one edge | 14a | ok, double [1 2] | ok, double [1 2] | EQUAL |
+| 6. CRB2R, zero condensed bonds | STEP3 | ok, double [0 2] | ok, double [0 2] | EQUAL |
+| 7. CRB2R, BondIndex not found | STEP3 | ok, double [3 3], warning: BondIndex 2 not found. | ok, double [3 3], warning: BondIndex 2 not found. | EQUAL |
+| 8. CRB2R, untouched bond (zero row) | STEP3 | ok, double [2 2] | ok, double [2 2] | EQUAL |
+| 9. condensed RBG, NaN component | 14b | error MATLAB:subsassigndimmismatch | error MATLAB:subsassigndimmismatch | EQUAL |
+| 10. CRB2R, headATM as a cell array | STEP3 | error MATLAB:UndefinedFunction | error MATLAB:UndefinedFunction | EQUAL |
+
+### Run 2026-09-22 09:26 UTC — fixtures: nglycan,phe,andest,chol,urea,tyr,bileacid,ci; modes: default,conservedOnly
+
+| Fixture | Mode | Run | Status | arm eq | moietyFormulae eq | reacting eq (differing fields) | console eq | median s before -> after (ratio) | targeted stages s before -> after | Solver | Corpus (.rxn) | Snapshot | Commit | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| nglycan | default | COMPARE | EQUAL | yes | yes | yes | yes | 1.43 -> 1.12 (1.27x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| nglycan | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| phe | default | COMPARE | EQUAL | yes | yes | yes | yes | 2.75 -> 1.98 (1.39x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| phe | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| andest | default | COMPARE | EQUAL | yes | yes | yes | yes | 6.84 -> 4.70 (1.46x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| andest | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| chol | default | COMPARE | EQUAL | yes | yes | yes | yes | 19.56 -> 13.46 (1.45x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| chol | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| urea | default | COMPARE | EQUAL | yes | yes | yes | yes | 9.85 -> 6.30 (1.56x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| urea | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| tyr | default | COMPARE | EQUAL | yes | yes | yes | yes | 15.66 -> 9.54 (1.64x) | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| tyr | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| bileacid | default | COMPARE | EQUAL | yes | yes | yes | yes | 45.96 -> 24.88 (1.85x) | 09: 42.32 -> 20.01; 14-17: 4.14 -> 0.06 (profiled, relative) | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| bileacid | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| ci | default | COMPARE | TIMING (not gated) | yes | yes | yes | yes | 0.17 -> 0.13 (1.27x) | - | gurobi | 18 | in repo | 4081fb6d1c84+src-uncommitted |  |
+| ci | conservedOnly | COMPARE | EQUAL | yes | yes | yes | yes | - | - | gurobi | 18 | in repo | 4081fb6d1c84+src-uncommitted |  |
+
+### Run 2026-09-22 09:36 UTC — fixtures: ci,tyr; modes: sanity
+
+| Fixture | Mode | Run | Status | arm eq | moietyFormulae eq | reacting eq (differing fields) | console eq | median s before -> after (ratio) | targeted stages s before -> after | Solver | Corpus (.rxn) | Snapshot | Commit | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ci | sanity | COMPARE | EQUAL | - | - | same error | yes | - | - | gurobi | 18 | in repo | 4081fb6d1c84+src-uncommitted | error outcome:  |
+| tyr | sanity | COMPARE | EQUAL | - | - | same error | yes | - | - | gurobi | 17072 | in repo | 4081fb6d1c84+src-uncommitted | error outcome:  |
+
+## Scope review (T026; FR-009, FR-010, SC-005)
+
+Reviewed against `develop` @ `64efe1dc8` on the working tree:
+
+1. **Files.** The only `src/` files changed are `extractBondSubgraphs.m`, `findAndExtractMolecularGraphs.m`
+   and `identifyConservedReactingMoieties.m`. Tests: `testExtractBondSubgraphs.m`,
+   `testFindAndExtractMolecularGraphs.m` and `data/bondSubgraphReference.mat` are added;
+   `testConservedReactingMoieties.m` is unchanged (`git diff --quiet develop -- <file>` exits 0). Everything
+   else is under `specs/20260921-154310-reacting-moiety-optimisation/`, plus `CLAUDE.md` (plan pointer)
+   and `.specify/feature.json`.
+2. **Diagnostics.** `git diff develop -U0 -- src/` removes only one diagnostic line:
+   `warning('BondIndex %d not found.', b);`. It reappears word for word, re-indented, in the STEP 3
+   fallback loop, and the fast path emits the same text (`warning('BondIndex %d not found.', bondIdx(iMissing));`).
+   No `error`, `fprintf` or `sanityChecks` line is removed or edited. The `verLessThan` guard and
+   `error('Requires matlab R2015b+')` in `extractBondSubgraphs.m` are unchanged, and the original
+   algorithm is kept word for word in the local function `extractBondSubgraphsByComponentScan`.
+3. **Where `identifyConservedReactingMoieties.m` changed.** All hunks are inside the four permitted
+   blocks: the stage-09 call lines 847 and 855, the STEP B4 loops (872–905), stage 14a/14b (1530–1571),
+   and STEP 3 (1642–1661).
+4. **No new files or options.** There are no `*Fast.m` files and no new `options.` field.
+5. **Lint.** `checkcode` reports 38 messages on the modified file against 39 on `develop`, so there are no
+   new ones. In `extractBondSubgraphs.m` all lint messages are inside the verbatim original fallback.
+6. **Fallbacks unreachable from the public function.** The stage 14a, 14b and STEP 3 fallbacks cannot be
+   reached through `identifyConservedReactingMoieties` (research R8). The evidence for them is: (a) each
+   `else`/fallback branch is the original loop, moved word for word (checked above); and (b) the T022
+   synthetic section, which runs word-for-word copies of the original and new blocks on 10 cases
+   (zero rows, one row, a missing BondIndex, an untouched bond, a `NaN` component, a cell `headATM`).
+   All 10 are `EQUAL`, and the two fallback cases raise the same error.
+
+## Timing summary (T027, T028; FR-012, SC-004)
+
+Whole-function time of `identifyConservedReactingMoieties`, `default` mode, median of 3 runs, gurobi,
+MATLAB R2024b. "Before" is from unmodified `develop` (T006 capture); "after" is from the T024 COMPARE run.
+
+| Fixture | Reactions | Before median s | After median s | Speed-up |
+|---|---|---|---|---|
+| nglycan | 3 | 1.43 | 1.12 | 1.27x |
+| phe | 14 | 2.75 | 1.98 | 1.39x |
+| andest | 29 | 6.84 | 4.70 | 1.46x |
+| chol | 61 | 19.56 | 13.46 | 1.45x |
+| urea | 67 | 9.85 | 6.30 | 1.56x |
+| tyr | 127 | 15.66 | 9.54 | 1.64x |
+| bileacid | 145 | 45.96 | 24.88 | 1.85x |
+| ci (not gated) | 3 | 0.17 | 0.13 | 1.27x |
+
+- **Gate (SC-004):** the after median is at or below the before median on all 7 subsystem fixtures.
+  No fixture was `SLOWER`, so no re-measurement was needed (T027).
+- **Prototype reference (not a gate):** 1.4x–2.0x on the same seven fixtures; bileacid 97.4 s → 49.4 s
+  (1.97x) and tyrosine 31.8 s → 17.5 s (1.82x). The absolute times here are about half the prototype's.
+  That is consistent with feature 029 and the sparse-bond-matrices feature being in `develop`, and with
+  this run not being instrumented. The ratios fall within the prototype's range, except nglycan and phe,
+  whose run times are dominated by stages this feature does not touch.
+- **Targeted stages, bileacid (profiled, relative; FR-012):** stage 09 (bond-subgraph and
+  molecular-graph extraction, STEP B1–B4) went from 42.32 s to 20.01 s, and stages 14–17 (RBG and
+  Condensed_RBG re-indexing, CRB2R build, and the rest of the reacting-bond section up to STEP 4) from
+  4.14 s to 0.06 s. Prototype reference: about 34 s → 13 s.
+- **US2 scenario 3** (inputs outside the fast-path preconditions give the original result, not an error):
+  covered by the US3 fallback cases in `testExtractBondSubgraphs.m` (T010, T015) and by T022 cases 9–10.
+
+## Optional pufa timing (T029; FR-014, SC-007)
+
+Not run in this implementation session. It is an optional, non-gating run of up to 4 h
+(`CBT_RMO_FIXTURES=pufa CBT_RMO_TIMING_ONLY=1 CBT_RMO_TIMING_RUNS=1`, under `timeout 4h`). The user has
+been offered it, and its outcome will be appended here if it is run.
+
+## Polish checks (T030–T033)
+
+- **T030, help headers:** `extractBondSubgraphs.m` and `findAndExtractMolecularGraphs.m` use the openCOBRA
+  keyword blocks (`USAGE:`, `INPUTS:`, `OUTPUTS:`, `OPTIONAL OUTPUT:` / `OPTIONAL INPUT:`, `NOTE:`) with
+  one space after `%`, argument lines indented four spaces with a colon, blank comment lines around
+  keywords, and canonical signature spacing. They contain no agent-specific wording.
+- **T031, Constitution VII:** no `evalc`, `nargin`, `warning('off')` or `warning off` in any new or changed
+  line. The only `evalc` hit is a comment in the check script explaining that `diary` is used instead.
+  Every `catch ME` in the new files records `ME.stack(1)`: via `describeError`, `errorTopFrame`, the
+  synthetic-section diagnostic line, and the assert message in `testExtractBondSubgraphs.m`. No absolute
+  path appears in `src/` or `test/`; the non-CI check scripts under `specs/` use the fixed external data
+  paths, as feature 029 did. No MATLAB-conventions skill is registered, so adding a project skill is a
+  proposed follow-up (research R12).
+- **T032, harness:** `runTestSuite` with CI's selective filter for this change (10 tests): **8 passed,
+  0 failed, 2 skipped**. `testMoieties` and `testBiomassPrecursorCheck` were skipped by `prepareTest`
+  because this machine has no `statistics_toolbox` licence, which is unrelated to this feature. Passed:
+  `testBuildAtomAndBondTransitionMultigraph`, `testCanonicalBondKey`, `testClassifySubgraphIsomorphism`,
+  `testConservedReactingMoieties`, `testExtractBondSubgraphs`, `testFindAndExtractMolecularGraphs`,
+  `testIdentifyAtomEquivalenceClasses`, `testResolveAtomNodeIndex`.
+- **T033, quickstart:** step 1 (the three CI tests) was re-run as part of T032 and passed. Step 2 is the T024
+  and T025 COMPARE runs above, all `EQUAL`; it was not repeated a second time, since no source changed
+  after T024. Step 3 is the T026 scope review above.
+
+## Follow-ups (T034; research R13; recorded only, none implemented)
+
+- Atom transition graph stage (superlinear in the prototype's timings).
+- Moiety transition graph stage and `addBondInfoToMTG`.
+- `identifyIsomorphicClasses` on `CBSubgrahs`.
+- `subgraph`/`addedge` construction inside `extractBondSubgraphs`, which is now the larger part of stage 09
+  (about 20 s of the profiled bileacid run).
+- The per-reaction graph rebuild inside `buildAtomAndBondTransitionMultigraph`.
+- The `sanityChecks = 1` crashes that predate this feature: `identifyIsomorphicClasses:34` on the CI
+  fixture, and `identifyConservedReactingMoieties:499` on tyr.
+- A project skill for MATLAB coding conventions (Constitution VII-F).
