@@ -844,7 +844,7 @@ end
 %   - Each BMG{k} keeps the same node set as bondSubgraphs{k},
 %     but edges contain ONLY bond-instance edges (no atom transition edges).
 %   - BMG is therefore the bond-only view of each bond-mapping component.
-[bondSubgraphs, BMG] = extractBondSubgraphs(BIG, ATG);
+[bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG);
 % STEP B2 — Separate conserved vs reacting bond-mapping components
 % This function:
 %   - Identifies the largest isomorphic group of bond-mapping components.
@@ -852,7 +852,7 @@ end
 % Note: "largest isomorphic group" refers to the most frequent repeating bond-pattern component.
 %   - All remaining components are treated as REACTING (not part of that conserved pattern).
 %
-[CMTG, RMTG, CMG, RMG, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs); 
+[CMTG, RMTG, CMG, RMG, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex);
 CBSubgrahs=BMG(conservedGroups);
 RBSubgraph=BMG(reactingGroups);
 % STEP B3 — Compute bond isomorphism classes (within conserved components only)
@@ -869,19 +869,10 @@ nBonds= size(BIG.Edges,1);
 % Initialize the mapping from bonds to their components
 bonds2component = zeros(nBonds, 1);
 
-% Loop through all components in BMG
+% Loop through all components in BMG, assigning the component index to all its edges
+% edge indices come from the extractBondSubgraphs cache (same set as BMG{i}.Edges.EdgeIndex)
 for i = 1:length(BMG)
-    % Extract the edge indices of the current component
-    currentComponentEdgeIndices = BMG{i, 1}.Edges.EdgeIndex;
-
-    % Determine the number of edges in the current component
-    numberOfEdgesInComponent = length(currentComponentEdgeIndices);
-
-    % Assign the current component index to all edges in the component
-    componentIndices = repelem(i, numberOfEdgesInComponent)';
-
-    % Map the component indices to the corresponding bond indices
-    bonds2component(currentComponentEdgeIndices) = componentIndices;
+    bonds2component(bmgEdgeIndex{i}) = i;
 end
 
 
@@ -889,20 +880,11 @@ end
 % By convention: bonds2isomorphismClass == 0 means "reacting / not conserved".
 bonds2isomorphismClass = zeros(nBonds, 1);
 
-% Loop through all conserved bond components (CBSubgrahs)
+% Loop through all conserved bond components (CBSubgrahs = BMG(conservedGroups)),
+% assigning the isomorphism class index to all edges of each
+% edge indices come from the extractBondSubgraphs cache (same set as BMG{i}.Edges.EdgeIndex)
 for i = 1:length(CBSubgrahs)
-    % Extract the edge indices of the current subgraph
-    currentSubgraphEdgeIndices = CBSubgrahs{i, 1}.Edges.EdgeIndex;
-
-    % Determine the number of edges in the current subgraph
-    numberOfEdgesInSubgraph = length(currentSubgraphEdgeIndices);
-
-    % Repeat the isomorphism class index for all edges in the subgraph
-    currentIsomorphismClass = bondSubsequentSubgraphIndices(i); % Current class
-    repeatedIsomorphismClass = repelem(currentIsomorphismClass, numberOfEdgesInSubgraph)';
-
-    % Map the repeated isomorphism class to the corresponding bond indices
-    bonds2isomorphismClass(currentSubgraphEdgeIndices) = repeatedIsomorphismClass;
+    bonds2isomorphismClass(bmgEdgeIndex{conservedGroups(i)}) = bondSubsequentSubgraphIndices(i);
 end
 %map BIG to connected component and isomorphism class
 % Extract the table of nodes from the graph BIG
@@ -1527,14 +1509,21 @@ end
 edgeTable=ABG.Edges(ABG.Edges.IsomorphismClass==0,:);
 nodeIds=unique([edgeTable.EndNodes(:,1);edgeTable.EndNodes(:,2)]);
 nodeTable=ABG.Nodes(nodeIds,:);
-newEndNodes = zeros(size(edgeTable, 1), 2);
-% Update the EndNodes by finding the new positions in the nodeTable
-for i = 1:size(edgeTable, 1)
-    % Find the new position for the first node (EndNodes1) in the edgeTable
-    newEndNodes(i, 1) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,1));
+% Update the EndNodes to their positions in the nodeTable. nodeTable.AtomIndex is
+% unique, so the first-match location from ismember is the position find() returns.
+[~, newEndNodes] = ismember(full(edgeTable.EndNodes), full(nodeTable.AtomIndex));
+if numel(unique(nodeTable.AtomIndex)) ~= height(nodeTable) || any(newEndNodes(:) == 0)
+    % Duplicated or missing atom indices: use the original per-edge search, which
+    % reports such inputs exactly as it always has
+    newEndNodes = zeros(size(edgeTable, 1), 2);
+    % Update the EndNodes by finding the new positions in the nodeTable
+    for i = 1:size(edgeTable, 1)
+        % Find the new position for the first node (EndNodes1) in the edgeTable
+        newEndNodes(i, 1) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,1));
     
-    % Find the new position for the second node (EndNodes2) in the edgeTable
-    newEndNodes(i, 2) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,2));
+        % Find the new position for the second node (EndNodes2) in the edgeTable
+        newEndNodes(i, 2) = find(nodeTable.AtomIndex == edgeTable.EndNodes(i,2));
+    end
 end
 %Replace the EndNodes in the edgeTable with the new positions
 edgeTable.EndNodes = newEndNodes;
@@ -1552,23 +1541,38 @@ newIds = (1:length(uniqueComponents))';
 
 % Create a new table with 'Component' and 'NewId'
 componentTable = table(uniqueComponents, newIds, 'VariableNames', {'Component', 'NewId'});
- % Initialize the new EndNodes vector
-endNodesModified = zeros(size(RBG.Edges.EndNodes));
+% Replace each EndNode with the NewId of its node's Component. RBG.Nodes.NewId is
+% 1:numnodes, so an EndNode is already its node's row, and componentTable.NewId is the
+% position of the Component in the sorted uniqueComponents. The reshape keeps the
+% EndNodes shape when there is exactly one edge (indexing a column vector with a 1-by-2
+% index would otherwise return a 2-by-1 result).
+rbgEndNodes = RBG.Edges.EndNodes;
+if isnumeric(rbgEndNodes)
+    endpointComponents = reshape(RBG.Nodes.Component(rbgEndNodes), size(rbgEndNodes));
+    [~, endNodesModified] = ismember(full(endpointComponents), full(uniqueComponents));
+else
+    endNodesModified = [];
+end
+if ~isnumeric(rbgEndNodes) || any(endNodesModified(:) == 0)
+    % Non-numeric end nodes or unmatched components: use the original per-edge search
+    % Initialize the new EndNodes vector
+    endNodesModified = zeros(size(RBG.Edges.EndNodes));
 
-% Loop over all edges in RBG to replace the EndNodes with the Component values
-for i = 1:size(RBG.Edges.EndNodes, 1)
-    % Get the current edge's EndNode(s)
-    currentEndNode = RBG.Edges.EndNodes(i, :);
+    % Loop over all edges in RBG to replace the EndNodes with the Component values
+    for i = 1:size(RBG.Edges.EndNodes, 1)
+        % Get the current edge's EndNode(s)
+        currentEndNode = RBG.Edges.EndNodes(i, :);
     
-    % Replace each EndNode with the corresponding Component value from ATG
-    for j = 1:2
-        % Find the index of the node in ATG whose AtomIndex matches the EndNode
-        idx = find(RBG.Nodes.NewId == currentEndNode(j));
+        % Replace each EndNode with the corresponding Component value from ATG
+        for j = 1:2
+            % Find the index of the node in ATG whose AtomIndex matches the EndNode
+            idx = find(RBG.Nodes.NewId == currentEndNode(j));
         
-        % If the index is found, replace the EndNode with the Component value
-        if ~isempty(idx)
-            component=RBG.Nodes.Component(idx);
-            endNodesModified(i, j) = componentTable.NewId(componentTable.Component==component);
+            % If the index is found, replace the EndNode with the Component value
+            if ~isempty(idx)
+                component=RBG.Nodes.Component(idx);
+                endNodesModified(i, j) = componentTable.NewId(componentTable.Component==component);
+            end
         end
     end
 end
@@ -1639,25 +1643,48 @@ tailATM = dATM.Edges.TailAtomIndex;
 % Reaction column indices
 [~, rxnCols] = ismember(dATM.Edges.rxns, model.rxns);
 
-for i = 1:nCRB
-    b = bondIdx(i);
-
-    % Lookup BG edge row
-    row = bondRowMap(b);
-    if row == 0
-        warning('BondIndex %d not found.', b);
-        continue;
+% Build CRB2R from a sparse atom -> reaction incidence: row i holds the reactions with
+% an atom transition that touches either end atom of condensed reacting bond i. This
+% replaces a scan of every atom transition for every bond. The original per-bond loop
+% is kept for inputs whose indices are not positive whole numbers.
+isPositiveWholeNumeric = @(v) isnumeric(v) && all(v(:) >= 1) && all(v(:) == fix(v(:)));
+if isPositiveWholeNumeric(atom1_all) && isPositiveWholeNumeric(atom2_all) ...
+        && isPositiveWholeNumeric(headATM) && isPositiveWholeNumeric(tailATM) ...
+        && isPositiveWholeNumeric(bondIdx) && all(bondIdx <= maxBondIndex)
+    rowsInBG = bondRowMap(bondIdx);
+    foundInBG = rowsInBG > 0;
+    for iMissing = find(~foundInBG)'
+        warning('BondIndex %d not found.', bondIdx(iMissing));
     end
+    validTr = rxnCols > 0;
+    nAtomsMax = max([0; atom1_all(:); atom2_all(:); headATM(:); tailATM(:)]);
+    atomToRxn = spones(sparse([headATM(validTr); tailATM(validTr)], ...
+        [rxnCols(validTr); rxnCols(validTr)], 1, nAtomsMax, nRxns));
+    foundIdx = find(foundInBG);
+    touch = atomToRxn(atom1_all(rowsInBG(foundIdx)), :) + atomToRxn(atom2_all(rowsInBG(foundIdx)), :);
+    [touchRow, touchCol] = find(touch);
+    CRB2R = sparse(foundIdx(touchRow), touchCol, 1, nCRB, nRxns);
+else
+    for i = 1:nCRB
+        b = bondIdx(i);
 
-    a1 = atom1_all(row);
-    a2 = atom2_all(row);
+        % Lookup BG edge row
+        row = bondRowMap(b);
+        if row == 0
+            warning('BondIndex %d not found.', b);
+            continue;
+        end
 
-    % Find transitions involving either atom
-    involved = (headATM == a1 | tailATM == a1 | ...
-                headATM == a2 | tailATM == a2);
+        a1 = atom1_all(row);
+        a2 = atom2_all(row);
 
-    cols = unique(rxnCols(involved));
-    CRB2R(i, cols(cols>0)) = 1;
+        % Find transitions involving either atom
+        involved = (headATM == a1 | tailATM == a1 | ...
+                    headATM == a2 | tailATM == a2);
+
+        cols = unique(rxnCols(involved));
+        CRB2R(i, cols(cols>0)) = 1;
+    end
 end
 
 
