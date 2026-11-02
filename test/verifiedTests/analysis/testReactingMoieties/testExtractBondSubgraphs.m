@@ -20,10 +20,13 @@
 %       conncomp(ATG), and an input whose atom index exceeds numnodes(BIG), which must
 %       raise the same error. The subgraph/rmedge ordering rules the rewrite relies on
 %       are asserted directly, so a MATLAB release that changes them fails here.
+%     - Memory feature 20261102-092909-reacting-moiety-memory (spec FR-007): planted changes
+%       (a moved end node, an extra edge variable) must be detected by the graph comparison.
 %
 % Authors:
 %     - COBRA Toolbox, feature 20260921-154310-reacting-moiety-optimisation
 %     - COBRA Toolbox, feature 20260928-100409-extract-bond-subgraphs-local-peeling
+%     - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory
 
 % only base MATLAB graph functions are used: no solver or toolbox requirement
 prepareTest();
@@ -128,6 +131,22 @@ if isfield(peeling, 'n332Inputs')
         isequal(edgeIndex332, peeling.n332Expected.bmgEdgeIndex), ...
         'extractBondSubgraphs output differs from the pre-change reference (332-reaction subset).');
 end
+
+% --- planted differences: the graph comparison above must report each (feature
+% 20261102-092909-reacting-moiety-memory) ---
+plantedSubgraphs = ciExpected.bondSubgraphs;
+graphIndex = find(cellfun(@numedges, plantedSubgraphs) > 0, 1);
+plantedEdges = plantedSubgraphs{graphIndex}.Edges;
+plantedEdges.EndNodes(1, 2) = 1 + mod(plantedEdges.EndNodes(1, 2), ...
+    numnodes(plantedSubgraphs{graphIndex}));
+plantedSubgraphs{graphIndex} = feval(class(plantedSubgraphs{graphIndex}), plantedEdges, ...
+    plantedSubgraphs{graphIndex}.Nodes);
+assert(~areGraphCellsEqual(plantedSubgraphs, ciExpected.bondSubgraphs), ...
+    'A moved end node of a bond subgraph is not detected.');
+plantedSubgraphs = ciExpected.bondSubgraphs;
+plantedSubgraphs{1}.Edges.planted = zeros(numedges(plantedSubgraphs{1}), 1);
+assert(~areGraphCellsEqual(plantedSubgraphs, ciExpected.bondSubgraphs), ...
+    'An extra edge variable in a bond subgraph is not detected.');
 
 % --- the subgraph/rmedge ordering rules the rewrite relies on ---
 checkSubgraphOrderingContract();

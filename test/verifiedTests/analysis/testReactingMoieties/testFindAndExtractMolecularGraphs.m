@@ -9,9 +9,12 @@
 %     - Covers: the bond subgraphs and bond mapping graphs of the r0317/ACONTm/r0426
 %       Recon3D fixture, as produced by the pre-change extractBondSubgraphs, so this
 %       test does not depend on extractBondSubgraphs itself.
+%     - Memory feature 20261102-092909-reacting-moiety-memory (spec FR-007): a planted change
+%       to a group must be detected by the group comparison.
 %
 % Authors:
 %     - COBRA Toolbox, feature 20260921-154310-reacting-moiety-optimisation
+%     - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory
 
 % only base MATLAB graph functions are used: no solver or toolbox requirement
 prepareTest();
@@ -40,6 +43,13 @@ for c = 1:numel(cacheForms)
     assertMatchesReference(ciExpected, CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups, ...
         cacheLabels{c});
 end
+
+% --- planted difference: a changed group must be detected (feature
+% 20261102-092909-reacting-moiety-memory) ---
+plantedGroup = ciExpected.conservedGroup;
+plantedGroup(end) = [];
+assert(~isequal(plantedGroup, ciExpected.conservedGroup), ...
+    'A member removed from the conserved group is not detected.');
 
 % change the directory
 cd(currentDir)

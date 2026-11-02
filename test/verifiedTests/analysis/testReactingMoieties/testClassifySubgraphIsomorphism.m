@@ -29,11 +29,19 @@
 %       small graphs and digraphs (simple, multigraphs with self-loops, cycles) and the empty
 %       and single-node graphs must be classified as isisomorphic classifies them; and the
 %       'getFallbackCount' action must be reset by 'resetCallCount'.
+%     - Interleaved size groups (feature 20261102-092909-reacting-moiety-memory, spec FR-005,
+%       SC-006): data/classifySubgraphIsomorphismGroupsReference.mat holds 20 lists of graph
+%       and digraph multigraphs whose (node count, edge count) groups interleave in index
+%       order, mixing identical edge lists, relabellings and same-size variants, classified
+%       in three modes before the sweep was restricted to each size group and the per-subgraph
+%       caches were made lazy. Every output, call count and fallback count must be unchanged,
+%       and a planted change to a class must be detected.
 %
 % Authors:
 %     - COBRA Toolbox, feature 021-prefilter-isomorphism-classification.
 %     - COBRA Toolbox, feature 20260930-102230-isomorphism-label-only-copies (reference cases).
 %     - COBRA Toolbox, feature 20261012-093525-symmetric-iso-zero-bond (exact unlabelled cases).
+%     - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory (interleaved size groups).
 
 % N == 0: all outputs empty, no error, no division by zero or indexing
 % out of range.
@@ -136,6 +144,39 @@ for k = 1:numel(reference.errorCases)
     assert(errorRaised, sprintf(['classifySubgraphIsomorphism returned normally, but the ' ...
         'pre-change helper raised %s (error case %d).'], errorCase.errorIdentifier, k));
 end
+
+% Interleaved (node count, edge count) groups: identical classifications, call counts and
+% fallback counts to the helper before the sweep was restricted to each size group (feature
+% 20261102-092909-reacting-moiety-memory)
+groups = load([fileparts(which('testClassifySubgraphIsomorphism')) filesep 'data' filesep ...
+    'classifySubgraphIsomorphismGroupsReference.mat']);
+for k = 1:numel(groups.groupCases)
+    groupCase = groups.groupCases(k);
+    classifySubgraphIsomorphism('resetCallCount');
+    [classes, firsts, subs] = classifySubgraphIsomorphism(groups.groupLists{groupCase.listIndex}, ...
+        groupCase.options{:});
+    caseName = sprintf('group case %d (list %d, %d option arguments)', k, ...
+        groupCase.listIndex, numel(groupCase.options));
+    assert(isequal(classes, groupCase.isomorphismClasses) && ...
+        isequal(firsts, groupCase.firstSubgraphIndices) && ...
+        isequal(subs, groupCase.subsequentSubgraphIndices), ...
+        sprintf('Classification differs from the pre-change helper (%s).', caseName));
+    assert(classifySubgraphIsomorphism('getCallCount') == groupCase.callCount && ...
+        classifySubgraphIsomorphism('getFallbackCount') == groupCase.fallbackCount, ...
+        sprintf('isisomorphic call or fallback count differs from the pre-change helper (%s).', ...
+        caseName));
+end
+% planted difference: moving one member to another class must be detected by isequal
+plantedClasses = groups.groupCases(1).isomorphismClasses;
+classSizes = cellfun(@numel, plantedClasses);
+assert(numel(plantedClasses) > 1 && any(classSizes > 1), 'Group case 1 cannot carry the control.');
+fromClass = find(classSizes > 1, 1);
+toClass = 1 + mod(fromClass, numel(plantedClasses));
+plantedClasses{toClass} = sort([plantedClasses{toClass}, plantedClasses{fromClass}(end)]);
+plantedClasses{fromClass}(end) = [];
+assert(~isequal(plantedClasses, groups.groupCases(1).isomorphismClasses), ...
+    'A member moved between classes is not detected.');
+clear groups
 
 % Exact unlabelled classification of near-symmetric components (feature
 % 20261012-093525-symmetric-iso-zero-bond, spec FR-001, FR-002, SC-001)
