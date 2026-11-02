@@ -152,8 +152,10 @@ function [isomorphismClasses, firstSubgraphIndices, subsequentSubgraphIndices] =
         if ~isempty(edgeVarName)
             edgeLabels{i} = sort(subgraphs{i, 1}.Edges.(edgeVarName));
         end
-        % copy carrying only the compared label variables, built once per subgraph
-        [labelOnlySubgraphs{i}, edgeEndNodes{i}] = labelOnlyCopy(subgraphs{i, 1}, nodeVarName, edgeVarName);
+        % edge end nodes, as labelOnlyCopy returns them; the label-only copy itself is
+        % built on first use below (many subgraphs are decided without it)
+        [sourceNodes, targetNodes] = findedge(subgraphs{i, 1});
+        edgeEndNodes{i} = [sourceNodes, targetNodes];
     end
 
     % single forward-scan exclusion algorithm: for each not-yet-excluded
@@ -197,8 +199,19 @@ function [isomorphismClasses, firstSubgraphIndices, subsequentSubgraphIndices] =
             end
 
             isisomorphicCallCount = isisomorphicCallCount + 1;
-            if isUnlabelled && strcmp(class(labelOnlySubgraphs{i}), class(labelOnlySubgraphs{j})) && ...
-                    isequal(edgeEndNodes{i}, edgeEndNodes{j})
+            % (labelOnlyCopy keeps the class, so the class of the input decides)
+            isSameEdgeList = isUnlabelled && strcmp(class(subgraphs{i, 1}), class(subgraphs{j, 1})) && ...
+                isequal(edgeEndNodes{i}, edgeEndNodes{j});
+            if ~isSameEdgeList
+                % the label-only copies, built once per subgraph on first use
+                if isempty(labelOnlySubgraphs{i})
+                    labelOnlySubgraphs{i} = labelOnlyCopy(subgraphs{i, 1}, nodeVarName, edgeVarName);
+                end
+                if isempty(labelOnlySubgraphs{j})
+                    labelOnlySubgraphs{j} = labelOnlyCopy(subgraphs{j, 1}, nodeVarName, edgeVarName);
+                end
+            end
+            if isSameEdgeList
                 % identical edge lists: the identity map is an isomorphism
                 isIsomorphicPair = true;
             elseif isUnlabelled && strcmp(class(labelOnlySubgraphs{i}), class(labelOnlySubgraphs{j}))
@@ -236,8 +249,14 @@ function [isomorphismClasses, firstSubgraphIndices, subsequentSubgraphIndices] =
                 currentClass = [currentClass, j]; %#ok<AGROW>
                 excludedSubgraphs(j) = true;
                 subsequentSubgraphIndices(j) = isomorphismClassNumber;
+                % j is classified and never compared again: free what was cached for it
+                [labelOnlySubgraphs{j}, multiplicityAdjacencies{j}, certificates{j}, ...
+                    nodeHashes{j}, edgeEndNodes{j}] = deal([]);
             end
         end
+        % the leader's sweep is over and it is never compared again
+        [labelOnlySubgraphs{i}, multiplicityAdjacencies{i}, certificates{i}, ...
+            nodeHashes{i}, edgeEndNodes{i}] = deal([]);
 
         isomorphismClasses{1, isomorphismClassNumber} = currentClass; %#ok<AGROW>
         firstSubgraphIndices(isomorphismClassNumber, 1) = i; %#ok<AGROW>
