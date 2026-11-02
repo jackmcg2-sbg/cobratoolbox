@@ -14,10 +14,18 @@
 %     - Test that a model containing a reaction with no bonds (implicit-hydrogen water
 %       transport, data/rxn) builds, with that reaction's atom transition in the atom graph and
 %       no bond transition from it (feature 20261012-093525-symmetric-iso-zero-bond, FR-005).
+%     - Test that every metabolite's bonds in BG equal its reference molblock (first-seen RXN
+%       file, instance 1): the same atom pairs and orders, no self-loop, on the main fixture
+%       and the coaM, coaX, coaR, crn and crnM bond-key fixtures; that the comparison detects
+%       a planted moved bond; and that a copy of a metabolite that is not isomorphic to its
+%       reference (data/rxnFilesNonIsomorphicCopy) raises a warning naming the metabolite and
+%       the reaction and keeps its raw atom numbering (feature
+%       20261102-151507-whole-molecule-bond-renumbering, FR-003, FR-004).
 %
 % Authors:
 %     - COBRA Toolbox, feature 20260921-125236-sparse-bond-matrices
 %     - COBRA Toolbox, feature 20261012-093525-symmetric-iso-zero-bond (zero-bond reaction)
+%     - COBRA Toolbox, feature 20261102-151507-whole-molecule-bond-renumbering (molfile equality)
 
 global CBTDIR
 
@@ -169,6 +177,65 @@ assert(atomResidual == 0 && bondResidual == 0, ...
     sprintf('FR-005: decomposition residuals %g (atoms) and %g (bonds) must be zero.', atomResidual, bondResidual));
 
 % return to the original directory
+%% (h) every metabolite's bonds in BG equal its reference molblock (feature
+% 20261102-151507-whole-molecule-bond-renumbering, FR-004, SC-001). Bond orders are integers,
+% so the comparison is exact.
+molfileOptions = struct('directed', 0, 'sanityChecks', 0);
+fixtureModels = {'main', subModel};
+for fixtureName = {'coaM', 'coaX', 'coaR', 'crn', 'crnM'}
+    fixture = load([fileDir filesep 'data' filesep fixtureName{1} 'BondKeySubmodel.mat']);
+    fixtureModels(end + 1, :) = {fixtureName{1}, fixture.subModel}; %#ok<AGROW>
+end
+for fixtureIdx = 1:size(fixtureModels, 1)
+    [~, ~, ~, ~, ~, ~, fixtureBG] = buildAtomAndBondTransitionMultigraph( ...
+        fixtureModels{fixtureIdx, 2}, rxnFilesDir, molfileOptions);
+    [mismatchedMets, selfLoopMets] = molfileBondMismatches(fixtureBG, rxnFilesDir, ...
+        fixtureModels{fixtureIdx, 2}.rxns);
+    assert(isempty(mismatchedMets) && isempty(selfLoopMets), sprintf(['FR-004: in the %s ' ...
+        'fixture the bonds of %s differ from their molblock (self-loops in %s).'], ...
+        fixtureModels{fixtureIdx, 1}, strjoin(mismatchedMets, ', '), strjoin(selfLoopMets, ', ')));
+end
+
+%% (i) the comparison detects a planted moved bond: move citrate's first C-H bond of the main
+% fixture to another carbon of citrate
+[~, ~, ~, ~, ~, ~, plantedBG] = buildAtomAndBondTransitionMultigraph(subModel, rxnFilesDir, ...
+    molfileOptions);
+plantedEnds = plantedBG.Edges.EndNodes;
+plantedMets = cellstr(plantedBG.Nodes.mets);
+plantedElements = cellstr(plantedBG.Nodes.Element);
+endElements = [plantedElements(plantedEnds(:, 1)), plantedElements(plantedEnds(:, 2))];
+isCitrateCH = strcmp(plantedMets(plantedEnds(:, 1)), 'cit[m]') & ...
+    sum(strcmp(endElements, 'C'), 2) == 1 & sum(strcmp(endElements, 'H'), 2) == 1;
+movedBond = find(isCitrateCH, 1);
+carbonEnd = plantedEnds(movedBond, strcmp(endElements(movedBond, :), 'C'));
+citrateCarbons = find(strcmp(plantedMets, 'cit[m]') & strcmp(plantedElements, 'C'));
+otherCarbon = citrateCarbons(find(citrateCarbons ~= carbonEnd, 1));
+plantedEdges = plantedBG.Edges;
+plantedEdges.EndNodes(movedBond, plantedEnds(movedBond, :) == carbonEnd) = otherCarbon;
+plantedBG = graph(plantedEdges, plantedBG.Nodes);
+plantedMismatches = molfileBondMismatches(plantedBG, rxnFilesDir, subModel.rxns);
+assert(isequal(plantedMismatches, {'cit[m]'}), ...
+    'FR-004: a C-H bond of citrate moved to another carbon is not detected.');
+
+%% (j) a copy that is not isomorphic to its reference warns, naming the metabolite and the
+% reaction, and keeps its raw atom numbering (FR-003): data/rxnFilesNonIsomorphicCopy/r0317.rxn
+% bonds citrate's H14 to C7 instead of C13
+nonIsomorphicDir = [fileDir filesep 'data' filesep 'rxnFilesNonIsomorphicCopy'];
+nonIsomorphicModel = extractSubNetwork(model, {'ACONTm'; 'r0317'});
+assert(strcmp(nonIsomorphicModel.rxns{1}, 'ACONTm'), ...
+    'FR-003 fixture: ACONTm must be processed first, so that its citrate is the reference.');
+nonIsomorphicText = runWithDiary(nonIsomorphicModel, nonIsomorphicDir, molfileOptions);
+assert(contains(nonIsomorphicText, 'cit[m]') && contains(nonIsomorphicText, 'r0317') && ...
+    contains(nonIsomorphicText, 'not isomorphic'), ...
+    'FR-003: no warning names cit[m] and r0317 for a copy not isomorphic to its reference.');
+[~, ~, ~, ~, ~, ~, nonIsomorphicBG] = buildAtomAndBondTransitionMultigraph(nonIsomorphicModel, ...
+    nonIsomorphicDir, molfileOptions);
+citAtom = @(number) find(strcmp(cellstr(nonIsomorphicBG.Nodes.mets), 'cit[m]') & ...
+    full(nonIsomorphicBG.Nodes.AtomNumber) == number);
+assert(findedge(nonIsomorphicBG, citAtom(7), citAtom(14)) > 0 && ...
+    findedge(nonIsomorphicBG, citAtom(13), citAtom(14)) > 0, ['FR-003: the non-isomorphic ' ...
+    'copy''s raw bond C7-H14 and the reference''s C13-H14 must both be kept.']);
+
 cd(currentDir);
 
 function [atomResidual, bondResidual] = decompositionResiduals(model, out)
@@ -185,6 +252,47 @@ bondN = sparse(model.S(metBondMappedBool, rxnBondMappedBool));
 bondRes = (M2BiW(metBondMappedBool, :) * M2BiE(metBondMappedBool, :)') * bondN - ...
     M2BiE(metBondMappedBool, :) * BTiE * BTi2R;
 bondResidual = full(max([0; abs(bondRes(:))]));
+end
+
+function [mismatchedMets, selfLoopMets] = molfileBondMismatches(BG, rxnFileDir, rxns)
+% Metabolites whose bonds in BG (atom-number pairs and Weight) differ from their reference
+% molblock, instance 1 of their first RXN file in rxns order, and metabolites with a bond
+% from an atom to itself (feature 20261102-151507-whole-molecule-bond-renumbering, FR-004)
+reference = containers.Map('KeyType', 'char', 'ValueType', 'any');
+for r = 1:numel(rxns)
+    if ~isfile(fullfile(rxnFileDir, [rxns{r} '.rxn']))
+        continue
+    end
+    [~, bonds] = readABRXNFile(rxns{r}, rxnFileDir);
+    for met = unique(bonds.mets(bonds.instances == 1))'
+        if ~isKey(reference, met{1})
+            isMet = strcmp(bonds.mets, met{1}) & bonds.instances == 1;
+            reference(met{1}) = sortrows([min(bonds.headAtoms(isMet), bonds.tailAtoms(isMet)), ...
+                max(bonds.headAtoms(isMet), bonds.tailAtoms(isMet)), bonds.bTypes(isMet)]);
+        end
+    end
+end
+atomMet = cellstr(BG.Nodes.mets);
+atomNumber = full(BG.Nodes.AtomNumber);
+ends = BG.Edges.EndNodes;
+weight = full(BG.Edges.Weight);
+bondMet = atomMet(ends(:, 1));
+mismatchedMets = {};
+selfLoopMets = {};
+for met = unique(bondMet)'
+    if ~isKey(reference, met{1})
+        continue % a reaction's energy pseudo-node
+    end
+    isMet = strcmp(bondMet, met{1});
+    a = atomNumber(ends(isMet, 1));
+    b = atomNumber(ends(isMet, 2));
+    if any(a == b)
+        selfLoopMets{end + 1} = met{1}; %#ok<AGROW>
+    end
+    if ~isequal(sortrows([min(a, b), max(a, b), weight(isMet)]), reference(met{1}))
+        mismatchedMets{end + 1} = met{1}; %#ok<AGROW>
+    end
+end
 end
 
 function consoleText = runWithDiary(model, rxnFilesDir, options)

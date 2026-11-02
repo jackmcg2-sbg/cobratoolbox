@@ -142,11 +142,27 @@ function [dATM, metAtomMappedBool, rxnAtomMappedBool, M2Ai, Ti2R, dATME, BG, dBT
 %    BTi2R:              `s` x `n` matrix mapping each directed bond transition instance to a bond-mapped reaction (`n` bond-mapped reactions; sparse by default; set options.denseBondMatrices = 1 for the historical full matrix)
 %    BTiE:               incidence matrix of the directed bond transition multigraph (`incidence(dBTM)`)
 
+% NOTE:
+%    Bond-node keys are built from one reference copy of each metabolite: the first
+%    instance of the metabolite in the first RXN file processed. Another copy of the
+%    metabolite (in a later file, or a further instance in the same file) keeps its own
+%    atom numbers when its element list and bond pairs equal the reference's; otherwise it
+%    is renumbered by one isomorphism of element-labelled molecular graphs (bond order
+%    ignored) onto the reference, applied to both atoms of every bond. So a metabolite's
+%    bonds in `BG` are its reference molblock's bonds, whatever numbering other RXN files
+%    give its chemically equivalent atoms, and bond orders are the reference's. A copy with
+%    no such isomorphism keeps its raw numbering and raises a warning naming the metabolite
+%    and the reaction (feature 20261102-151507-whole-molecule-bond-renumbering).
+%
 % .. Authors: - Ronan M. T. Fleming, 2022, Hadjar Rahou 2022 (Bond section)
 %             - COBRA Toolbox, 2026: the bond loop hands its parsed RXN file to
 %               addBondMappingsRXNFile instead of having it read again, and
 %               dBTM.Nodes.BondElmts is filled in one assignment; outputs unchanged
 %               (feature 20260921-160105-build-function-runtime).
+%             - COBRA Toolbox, feature 20261102-151507-whole-molecule-bond-renumbering:
+%               bond keys from one isomorphism per copy onto the reference molblock,
+%               replacing the per-atom symmetry-class substitution of feature 020, which
+%               moved bonds between equivalent atoms.
 %             - COBRA Toolbox, feature 20261012-093525-symmetric-iso-zero-bond: BTi2R has
 %               one column per bond-mapped reaction, so a reaction with no bonds builds
 
@@ -601,16 +617,14 @@ k=1;
 % Ground truth bond count per metabolite, read once from each metabolite's own RXN-file
 % molblock (feature 019-canonicalize-bond-node-keys, FR-008 per-metabolite sanity check)
 metBondCountGroundTruth = containers.Map('KeyType','char','ValueType','double');
-% Symmetry/resonance equivalence-class canonicalization caches, computed once per
-% metabolite the first time it is seen (feature 020-canonicalize-symmetric-atom-bonds,
-% FR-001/FR-002/FR-005): metAtomCanonicalRankMap/metUnsafeNeighborsMap map a metabolite
-% identifier to its own containers.Map (see identifyAtomEquivalenceClasses.m).
+% Reference molblock of each metabolite, stored the first time it is seen (feature
+% 20261102-151507-whole-molecule-bond-renumbering, FR-002): its atoms' elements by atom
+% number and its bond pairs. Every other copy of the metabolite is renumbered onto it.
 % metBondTypeFirstSeen maps a canonicalized bond-node key to the bond type recorded the
 % first time that key was encountered, so a resonance-ambiguous bond's formal type
 % resolves deterministically (FR-003) rather than via mapAontoBOld's incidental
 % Head-before-Tail duplicate-key resolution (research R7).
-metAtomCanonicalRankMap = containers.Map('KeyType','char','ValueType','any');
-metUnsafeNeighborsMap = containers.Map('KeyType','char','ValueType','any');
+metReferenceMolblock = containers.Map('KeyType','char','ValueType','any');
 metBondTypeFirstSeen = containers.Map('KeyType','char','ValueType','double');
 % Node-identity index over dATM.Nodes (feature 20260902-150020-eliminate-bond-
 % transition-ismember-scans, FR-001/FR-002/FR-003): the reaction-invariant part is
@@ -648,16 +662,12 @@ for i = 1:nRxns
                 if ~isKey(metBondCountGroundTruth, bMet)
                     metBondCountGroundTruth(bMet) = nnz(strcmp(bonds.mets, bMet) & bonds.instances==1);
                 end
-                if ~isKey(metAtomCanonicalRankMap, bMet)
-                    metAtomBool = strcmp(atoms.mets, bMet) & atoms.instances==1;
-                    metBondBool = strcmp(bonds.mets, bMet) & bonds.instances==1;
-                    [canonicalRankMap, ~, unsafeNeighborsMap] = identifyAtomEquivalenceClasses(...
-                        atoms.metNrs(metAtomBool), atoms.elements(metAtomBool), ...
-                        bonds.headAtoms(metBondBool), bonds.tailAtoms(metBondBool), bonds.bTypes(metBondBool), bMet);
-                    metAtomCanonicalRankMap(bMet) = canonicalRankMap;
-                    metUnsafeNeighborsMap(bMet) = unsafeNeighborsMap;
+                if ~isKey(metReferenceMolblock, bMet)
+                    metReferenceMolblock(bMet) = molblockOf(atoms, bonds, bMet, 1);
                 end
             end
+            % renumbering of every copy of every metabolite in this file onto its reference
+            copyRenumbering = renumberCopiesOntoReference(atoms, bonds, metReferenceMolblock, model.rxns{i});
             %Add energy node to dATM for each reaction(an additional node that represents the energy used to break or build chemical bonds)
             EnergyNode=table({'E'}', size(dATM.Nodes, 1)+1, {model.rxns{i}}', 1, {'E'}', 'VariableNames', {'Atom' 'AtomIndex' 'mets' 'AtomNumber' 'Element'});
             dATME= addnode(dATM, EnergyNode);
@@ -683,19 +693,17 @@ for i = 1:nRxns
             for j=1:max(bondMappings.bondTransitionNrs)
                 substrateBondNumber = find(bondMappings.bondTransitionNrs==j & bondMappings.isSubstrate);
                 productBondNumber = find(bondMappings.bondTransitionNrs==j & ~bondMappings.isSubstrate);
-                % Symmetry/resonance equivalence-class canonicalization (feature
-                % 020-canonicalize-symmetric-atom-bonds, FR-002): remap each bond's raw atom
-                % numbers to their equivalence class's canonical representative before
-                % canonicalBondKey orders them, so canonicalBondKey's existing atom-number
-                % sort correctly collapses a symmetric/resonance-ambiguous bond onto one
-                % identity regardless of which RXN file supplied it. canonicalBondKey.m
-                % itself is unchanged (research R6).
-                [substrateHeadAtomNum, substrateTailAtomNum] = safeCanonicalizeBondAtoms(...
-                    bondMappings.mets{substrateBondNumber}, bondMappings.headAtoms(substrateBondNumber), ...
-                    bondMappings.tailAtoms(substrateBondNumber), metAtomCanonicalRankMap, metUnsafeNeighborsMap);
-                [productHeadAtomNum, productTailAtomNum] = safeCanonicalizeBondAtoms(...
-                    bondMappings.mets{productBondNumber}, bondMappings.headAtoms(productBondNumber), ...
-                    bondMappings.tailAtoms(productBondNumber), metAtomCanonicalRankMap, metUnsafeNeighborsMap);
+                % Renumber both atoms of each bond with its copy's renumbering onto the
+                % metabolite's reference molblock (feature
+                % 20261102-151507-whole-molecule-bond-renumbering, FR-001) before
+                % canonicalBondKey orders them, so the same bond of every copy gets the
+                % reference's key. canonicalBondKey.m itself is unchanged.
+                [substrateHeadAtomNum, substrateTailAtomNum] = renumberBondAtoms(copyRenumbering, ...
+                    bondMappings.mets{substrateBondNumber}, bondMappings.instances(substrateBondNumber), ...
+                    bondMappings.headAtoms(substrateBondNumber), bondMappings.tailAtoms(substrateBondNumber));
+                [productHeadAtomNum, productTailAtomNum] = renumberBondAtoms(copyRenumbering, ...
+                    bondMappings.mets{productBondNumber}, bondMappings.instances(productBondNumber), ...
+                    bondMappings.headAtoms(productBondNumber), bondMappings.tailAtoms(productBondNumber));
                 [bondSubstrateID, subMet1, subAtomNum1, subElem1, subMet2, subAtomNum2, subElem2] = canonicalBondKey(...
                     bondMappings.mets{substrateBondNumber}, substrateHeadAtomNum, bondMappings.headAtomElements{substrateBondNumber},...
                     bondMappings.mets{substrateBondNumber}, substrateTailAtomNum, bondMappings.tailAtomElements{substrateBondNumber});
@@ -1007,38 +1015,87 @@ end
 
 end
 
-function [headOut, tailOut] = safeCanonicalizeBondAtoms(met, headRaw, tailRaw, canonicalRankMapByMet, unsafeNeighborsMapByMet)
-% Remap a bond's raw head/tail atom numbers to their symmetry-equivalence-class
-% canonical representative, for one metabolite (feature 020-canonicalize-symmetric-atom-bonds).
-% A metabolite absent from canonicalRankMapByMet (e.g. a reaction's energy pseudo-node)
-% is passed through unchanged.
-headOut = headRaw;
-tailOut = tailRaw;
-if ~isKey(canonicalRankMapByMet, met)
-    return;
-end
-rankMap = canonicalRankMapByMet(met);
-unsafeMap = unsafeNeighborsMapByMet(met);
-headOut = safeCanonicalizeOneAtom(headRaw, tailRaw, rankMap, unsafeMap);
-tailOut = safeCanonicalizeOneAtom(tailRaw, headRaw, rankMap, unsafeMap);
+function molblock = molblockOf(atoms, bonds, met, instance)
+% Elements by atom number and sorted bond pairs (atom numbers, smaller first) of one copy of
+% a metabolite in one RXN file
+atomBool = strcmp(atoms.mets, met) & atoms.instances == instance;
+bondBool = strcmp(bonds.mets, met) & bonds.instances == instance;
+atomNumbers = atoms.metNrs(atomBool);
+elements = repmat({''}, max([atomNumbers(:); 0]), 1);
+elements(atomNumbers) = atoms.elements(atomBool);
+head = bonds.headAtoms(bondBool);
+tail = bonds.tailAtoms(bondBool);
+molblock = struct('elements', {elements}, ...
+    'pairs', sortrows([min(head(:), tail(:)), max(head(:), tail(:))]));
 end
 
-function atomOut = safeCanonicalizeOneAtom(atomRaw, otherAtomRaw, rankMap, unsafeMap)
-% Substitute atomRaw's equivalence-class canonical representative, UNLESS the bond's
-% other endpoint (otherAtomRaw) is itself simultaneously bonded to another member of
-% atomRaw's class -- substituting in that case would collapse two genuinely distinct,
-% simultaneously-present bonds onto one canonical key (e.g. a gem-dimethyl pair's shared
-% backbone carbon), undercounting the metabolite's true bond count.
-atomOut = atomRaw;
-if ~isKey(rankMap, atomRaw)
-    return;
+function copyRenumbering = renumberCopiesOntoReference(atoms, bonds, metReferenceMolblock, rxn)
+% For every copy (metabolite, instance) of this RXN file, the renumbering of its atom numbers
+% onto its metabolite's reference molblock: empty for the identity (the copy's elements and
+% bond pairs equal the reference's), otherwise a vector mapping each raw atom number to the
+% reference's, from one isomorphism of element-labelled molecular graphs (bond order
+% ignored). A copy with no isomorphism keeps its raw numbering (empty) and raises a warning.
+copyRenumbering = containers.Map('KeyType', 'char', 'ValueType', 'any');
+copyMets = bonds.mets;
+copyInstances = bonds.instances;
+[~, firstRows] = unique(strcat(copyMets, '#', cellstr(num2str(copyInstances(:)))), 'stable');
+for row = firstRows'
+    met = copyMets{row};
+    instance = copyInstances(row);
+    if ~isKey(metReferenceMolblock, met)
+        continue
+    end
+    reference = metReferenceMolblock(met);
+    copy = molblockOf(atoms, bonds, met, instance);
+    renumbering = [];
+    if ~(isequal(copy.elements, reference.elements) && isequal(copy.pairs, reference.pairs))
+        renumbering = moleculeIsomorphism(copy, reference, met, rxn);
+    end
+    copyRenumbering(sprintf('%s\x1f%d', met, instance)) = renumbering;
 end
-canonicalRep = rankMap(atomRaw);
-if canonicalRep == atomRaw
-    return; % already canonical (singleton class, or this class's own minimum)
 end
-if isKey(unsafeMap, canonicalRep) && ismember(otherAtomRaw, unsafeMap(canonicalRep))
-    return; % unsafe: the other endpoint is also bonded to another member of this class
+
+function renumbering = moleculeIsomorphism(copy, reference, met, rxn)
+% Map from the copy's atom numbers to the reference's by one isomorphism of the two
+% element-labelled molecular graphs (bond order ignored); empty, with a warning, if none
+nCopy = numel(copy.elements);
+nReference = numel(reference.elements);
+renumbering = [];
+if nCopy == nReference && size(copy.pairs, 1) == size(reference.pairs, 1)
+    copyGraph = graph(copy.pairs(:, 1), copy.pairs(:, 2), [], nCopy);
+    copyGraph.Nodes.Element = copy.elements;
+    referenceGraph = graph(reference.pairs(:, 1), reference.pairs(:, 2), [], nReference);
+    referenceGraph.Nodes.Element = reference.elements;
+    try
+        renumbering = isomorphism(copyGraph, referenceGraph, 'NodeVariables', 'Element');
+    catch ME
+        error('buildAtomAndBondTransitionMultigraph:isomorphismFailed', ...
+            'Isomorphism of %s in %s onto its reference molblock failed: %s (%s:%d).', ...
+            met, rxn, ME.message, ME.stack(1).name, ME.stack(1).line);
+    end
 end
-atomOut = canonicalRep;
+if isempty(renumbering)
+    warning('buildAtomAndBondTransitionMultigraph:nonIsomorphicMolblock', ...
+        ['The molblock of %s in %s is not isomorphic to its reference molblock (its first ' ...
+        'copy); its raw atom numbering is kept, so its bonds are not merged with the ' ...
+        'reference''s.'], met, rxn);
+    renumbering = [];
+else
+    renumbering = renumbering(:);
+end
+end
+
+function [headOut, tailOut] = renumberBondAtoms(copyRenumbering, met, instance, headRaw, tailRaw)
+% Apply a copy's renumbering to both atoms of one of its bonds; a metabolite with no
+% reference (e.g. a reaction's energy pseudo-node) or an identity renumbering passes through
+headOut = headRaw;
+tailOut = tailRaw;
+key = sprintf('%s\x1f%d', met, instance);
+if isKey(copyRenumbering, key)
+    renumbering = copyRenumbering(key);
+    if ~isempty(renumbering)
+        headOut = renumbering(headRaw);
+        tailOut = renumbering(tailRaw);
+    end
+end
 end

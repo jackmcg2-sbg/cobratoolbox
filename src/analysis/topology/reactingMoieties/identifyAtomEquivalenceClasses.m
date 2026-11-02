@@ -10,6 +10,12 @@ function [canonicalAtomNumberMap, equivalenceClasses, unsafeNeighborsByClass] = 
 % resolve consistently regardless of which RXN file's raw atom numbering
 % produced them (feature 020-canonicalize-symmetric-atom-bonds).
 %
+% No longer called by `buildAtomAndBondTransitionMultigraph`, which since feature
+% 20261102-151507-whole-molecule-bond-renumbering renumbers each copy of a metabolite onto
+% one reference copy by a single isomorphism instead: substituting class representatives at
+% each bond end separately moved bonds between equivalent atoms. Kept unchanged, with its
+% test.
+%
 % Detection uses iterative colour refinement (1-dimensional Weisfeiler-Leman)
 % over the metabolite's own atom-adjacency graph, built with MATLAB's
 % `graph` object (Graph and Network Algorithms, base MATLAB, already used
