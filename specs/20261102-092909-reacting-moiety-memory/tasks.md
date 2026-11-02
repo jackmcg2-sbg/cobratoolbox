@@ -34,14 +34,14 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
 
 ## Phase 1: Setup
 
-- [ ] T001 From the repository root, run:
+- [X] T001 From the repository root, run:
   - `git merge-base --is-ancestor BASE HEAD`;
   - `git diff --quiet BASE -- RM TESTDIR`;
   - `git diff --quiet 6bc522da0 BASE -- RM`;
   - check that `PROTO` holds the six commits listed above, on `6bc522da0`.
 
   Stop and report if any check fails.
-- [ ] T002 [P] Copy the checkpoints to `WORK/ckpt/<order>-n<size>/` and record their sizes:
+- [X] T002 [P] Copy the checkpoints to `WORK/ckpt/<order>-n<size>/` and record their sizes:
   - `SCAN/random/n{100,250,500,1000}/*/checkpoint_build.mat`;
   - `SCAN/bfs/n500/*/checkpoint_build.mat`.
 
@@ -53,7 +53,7 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
 
 **Do not edit any file under `RM` until T010 passes.**
 
-- [ ] T003 [US2] Create `FEATURE/captureMemoryReferences.m`.
+- [X] T003 [US2] Create `FEATURE/captureMemoryReferences.m`.
   1. **Guard**: run `git diff --quiet BASE -- RM` through `system`. If it fails, raise `captureMemoryReferences:srcModified`.
   2. **Full-mode golden cases (R7)**: for each bond-key fixture (`coaM`, `coaX`, `coaR`, `crn`, `crnM`):
      1. load `TESTDIR/data/<name>BondKeySubmodel.mat`;
@@ -70,34 +70,34 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
   4. **Save**: `TESTDIR/data/reactingMoietyMemoryReference.mat` (`goldenCases`, `provenance`) and `TESTDIR/data/classifySubgraphIsomorphismGroupsReference.mat` (`groupCases`, `provenance`), both with `-v7`. The `provenance` holds the base commit, the MATLAB version, the MILP solver and the date. Print the file sizes and case counts.
 
   Every `catch` reports `ME.stack(1)` (VII-C).
-- [ ] T004 [US2] Run T003. Record the file sizes, the number of cases, and any error cases with their messages.
-- [ ] T005 [P] [US2] Extend `TESTDIR/testExtractBondSubgraphs.m` (US2 AS1, AS2). Add one `%%` section per behaviour.
+- [X] T004 [US2] Run T003. Record the file sizes, the number of cases, and any error cases with their messages.
+- [X] T005 [P] [US2] Extend `TESTDIR/testExtractBondSubgraphs.m` (US2 AS1, AS2). Add one `%%` section per behaviour.
   - **Label-only on the default path**: for the CI fixture and every `ok` peeling case, check `labelOnly` against the full call: the class, node count and `EndNodes` order of `bondSubgraphs`; for `BMG`, no node table, exactly the kept edge variables, and equal columns; `bmgEdgeIndex` identical.
   - **Fallback paths**: for every fallback case and every error case, `labelOnly = true` gives the reference outputs or the reference error.
   - **Default arguments**: `labelOnly` `[]` and `false` equal the reference.
   - **Classification**: the unlabelled groups (`classifySubgraphIsomorphism` of the label-only and full `bondSubgraphs`) and the `mets`-labelled classes (`identifyIsomorphicClasses` of the label-only and full `BMG`) are identical on the CI fixture.
   - **Controls**: the structural comparison reports a difference for a swapped end node and for an extra variable added to a label-only subgraph.
   - **Header**: update `Purpose:` and `Authors:` (this feature, FR-003, FR-007).
-- [ ] T006 [P] [US2] Extend `TESTDIR/testFindAndExtractMolecularGraphs.m` (US2 AS3).
+- [X] T006 [P] [US2] Extend `TESTDIR/testFindAndExtractMolecularGraphs.m` (US2 AS3).
   - **`computeGraphs = false`**: the groups equal the reference, and all four graphs are `isequal(..., [])`.
   - **`true`, `[]` and omitted**: all six outputs equal the reference.
   - **Control**: a planted change to a reference group is detected.
   - **Header**: updated.
-- [ ] T007 [P] [US2] Extend `TESTDIR/testClassifySubgraphIsomorphism.m` (US2 AS4). Load `classifySubgraphIsomorphismGroupsReference.mat`.
+- [X] T007 [P] [US2] Extend `TESTDIR/testClassifySubgraphIsomorphism.m` (US2 AS4). Load `classifySubgraphIsomorphismGroupsReference.mat`.
   - **Group cases**: for each case, reset the counter, classify, and assert `isequal` on the three outputs and the call count.
   - **Control**: a planted change to one class is detected.
   - **Header**: updated.
 
   Keep the existing assertions.
-- [ ] T008 [P] [US2] Extend `TESTDIR/testConservedReactingMoieties.m` (US1 AS1, US2 AS2). Load `reactingMoietyMemoryReference.mat`, and run each of its golden cases through the existing `checkGoldenCase`, after the `prepareTest('needsMILP', true)` gate. `reacting` is compared only when the solver matches the capture's.
+- [X] T008 [P] [US2] Extend `TESTDIR/testConservedReactingMoieties.m` (US1 AS1, US2 AS2). Load `reactingMoietyMemoryReference.mat`, and run each of its golden cases through the existing `checkGoldenCase`, after the `prepareTest('needsMILP', true)` gate. `reacting` is compared only when the solver matches the capture's.
   - **Controls**: on one captured `arm`/`reacting`, `isequaln` reports a difference for each planted change:
     - a node added to an `arm.MG` graph;
     - a changed numeric node value in an `arm.MG` graph;
     - `L(1)` + 1;
     - an edge added to a `reacting.ReactMoietyGraphs` graph.
   - **Header**: updated.
-- [ ] T009 [US2] On the unchanged source, run the four extended tests, then every test in `TESTDIR`. All must pass, and each control must be detected. Record the output.
-- [ ] T010 Create `FEATURE/reactingMoietyMemoryCheck.m` and `FEATURE/reactingMoietyMemoryCheck.sh` (non-CI; FR-008). Port `run_identify.m`, `compare_outputs.m` and `job.sh` from the reconXmoieties exploration's `exploration/` folder.
+- [X] T009 [US2] On the unchanged source, run the four extended tests, then every test in `TESTDIR`. All must pass, and each control must be detected. Record the output.
+- [X] T010 Create `FEATURE/reactingMoietyMemoryCheck.m` and `FEATURE/reactingMoietyMemoryCheck.sh` (non-CI; FR-008). Port `run_identify.m`, `compare_outputs.m` and `job.sh` from the reconXmoieties exploration's `exploration/` folder.
   - **`.m`**:
     1. take a reactingMoieties folder, put it first on the path, and assert `which identifyConservedReactingMoieties`;
     2. load a copied checkpoint and run identification in full mode with `sanityChecks = 0`;
@@ -116,12 +116,12 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
 
 **Independent test**: T017 and T018.
 
-- [ ] T011 [US1] Apply P1: `git cherry-pick 1f3e33bec`. Review the diff against plan Design 1, then run every test in `TESTDIR`; all must pass.
-- [ ] T012 [US1] Apply P2: `git cherry-pick c96608d0b`. Review the diff against Design 2 and the contract, then run every test in `TESTDIR`.
-- [ ] T013 [US1] Apply P3: `git cherry-pick d970f3ca5`. Review the diff against Design 3, then run every test in `TESTDIR`.
-- [ ] T014 [US1] Apply P4: `git cherry-pick 4af4ec788`. Review the diff against Design 4, then run every test in `TESTDIR`.
-- [ ] T015 [US1] Apply P5: `git cherry-pick 3fdf63f88`. Review the diff against Design 5, then run every test in `TESTDIR`.
-- [ ] T016 [US1] Apply P6: `git cherry-pick 868308670`. Review the diff against Design 6, then run every test in `TESTDIR`.
+- [X] T011 [US1] Apply P1: `git cherry-pick 1f3e33bec`. Review the diff against plan Design 1, then run every test in `TESTDIR`; all must pass.
+- [X] T012 [US1] Apply P2: `git cherry-pick c96608d0b`. Review the diff against Design 2 and the contract, then run every test in `TESTDIR`.
+- [X] T013 [US1] Apply P3: `git cherry-pick d970f3ca5`. Review the diff against Design 3, then run every test in `TESTDIR`.
+- [X] T014 [US1] Apply P4: `git cherry-pick 4af4ec788`. Review the diff against Design 4, then run every test in `TESTDIR`.
+- [X] T015 [US1] Apply P5: `git cherry-pick 3fdf63f88`. Review the diff against Design 5, then run every test in `TESTDIR`.
+- [X] T016 [US1] Apply P6: `git cherry-pick 868308670`. Review the diff against Design 6, then run every test in `TESTDIR`.
 
   In every task T011–T016: if a cherry-pick does not apply cleanly, or review requires a change, stop and report. Do not edit beyond the prototype without approval. Each commit message names the feature and the change (FR-009) and ends with the agent's co-author line.
 
@@ -129,21 +129,27 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
 
 ## Phase 4: Verification and close-out
 
-- [ ] T017 [US1] Run `reactingMoietyMemoryCheck.sh equality` on the five copied checkpoints, `WORK/base/RM` against `RM` (SC-002). All outputs must be `isequaln`, and all controls detected.
-- [ ] T018 [US1] Run `reactingMoietyMemoryCheck.sh memory`: 2 alternating runs each of base and new at random n = 1,000 (SC-003, SC-004). Report the ratio of the median identification-window peak RSS, and of the median times. SC-003 is a hard gate: a ratio above 0.50 fails the feature, so stop and report rather than continue to T019. A run that is inconsistent (more than 1.5× its sibling, for example because of other load on the machine) is repeated, and both runs are recorded.
-- [ ] T019 [P] Static review (FR-001, FR-009, FR-010):
+- [X] T017 [US1] Run `reactingMoietyMemoryCheck.sh equality` on the five copied checkpoints, `WORK/base/RM` against `RM` (SC-002). All outputs must be `isequaln`, and all controls detected.
+- [X] T018 [US1] Run `reactingMoietyMemoryCheck.sh memory`: 2 alternating runs each of base and new at random n = 1,000 (SC-003, SC-004). Report the ratio of the median identification-window peak RSS, and of the median times. SC-003 is a hard gate: a ratio above 0.50 fails the feature, so stop and report rather than continue to T019. A run that is inconsistent (more than 1.5× its sibling, for example because of other load on the machine) is repeated, and both runs are recorded.
+- [X] T019 [P] Static review (FR-001, FR-009, FR-010):
   - `git diff BASE -- RM` touches only the four files;
   - the help text documents both options;
   - no `nargin`, `evalc` or warning suppression;
   - `git log BASE..HEAD` shows six change commits after the test commit(s).
-- [ ] T020 Write `FEATURE/reactingMoietyMemoryResults.md`: the test results, the equality table, the memory and time table with the job start and end times, and the behaviours not verified (above 1,000 reactions, and full Rhea).
-- [ ] T021 Report:
+- [X] T020 Write `FEATURE/reactingMoietyMemoryResults.md`: the test results, the equality table, the memory and time table with the job start and end times, and the behaviours not verified (above 1,000 reactions, and full Rhea).
+- [X] T021 Report:
   - files changed;
   - checks run;
   - tests passed and failed, with output;
   - SC-002–SC-004;
   - behaviours not verified.
-- [ ] T022 Create `FEATURE/agent-runs/<UTC-timestamp>-reacting-moiety-memory/implementation-receipt.md`, with the sections Prompt, Final response (T021's response, verbatim), Diff summary, Tests, Unresolved issues and Other information.
+- [X] T022 Create `FEATURE/agent-runs/<UTC-timestamp>-reacting-moiety-memory/implementation-receipt.md`, with the sections Prompt, Final response (T021's response, verbatim), Diff summary, Tests, Unresolved issues and Other information.
+
+## Implementation notes (2026-11-02)
+
+- **T005, T006**: the base-behaviour assertions and their controls landed in commit `74e6d04b0`, before any source edit. The `labelOnly` and `computeGraphs` sections cannot run before those options exist. They were written in full beforehand, and shown to fail on the unchanged source ("Too many input arguments") and to pass on the prototype source. They were then committed together with the change that adds each option: `computeGraphs` with P1 (`ce0bb089f`), `labelOnly` with P2 (`2386c98bd`). This keeps every commit green (FR-009).
+- **T004**: all five `sanityChecks = 1` full-mode cases raise the pre-existing `identifyIsomorphicClasses.m:34` sanity-check error ("Inconsistent mapping of atoms to connected components."). They are pinned as error cases. The full `sanityChecks = 1` path stays covered end to end by the existing `mainDefaultSanity` golden case.
+- **T010**: written after Phase 3 rather than alongside Phase 2. Its self-check compares the archived base copy against itself, so it does not depend on the order.
 
 ---
 
