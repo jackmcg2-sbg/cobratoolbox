@@ -104,16 +104,16 @@ description: "Task list for whole-molecule bond renumbering"
 
 ## Phase 6: Verification and close-out
 
-- [ ] T015 Create and run `FEATURE/wholeMoleculeRenumberingCheck.m` (non-CI).
+- [X] T015 Create and run `FEATURE/wholeMoleculeRenumberingCheck.m` (non-CI).
   - **Full collapsed VMH**: build the multigraph from the `WORK` model copy and the `VMH` RXN files, run `molfileEqualityCheck`, and report the count (target 0, SC-002).
   - **Wall time**: the builder's time against `BASE` (`git archive`) on the same input (SC-006). Base and new runs are sequential and each capped; a run whose time differs by more than 1.5× from a repeat is repeated.
 - [X] T016 [P] Static review:
   - `git diff BASE -- src` touches only `SRC` and `identifyAtomEquivalenceClasses.m` (help only);
   - no `nargin`, `evalc` or warning suppression;
   - the warning text names the metabolite and the reaction.
-- [ ] T017 Complete `FEATURE/wholeMoleculeRenumberingResults.md`: red output, test results, difference report, VMH count, wall time, and behaviours not verified (Rhea; non-isomorphic copies in real corpora).
-- [ ] T018 Report the files changed, checks run, tests passed and failed, SC-001–SC-006 and what was not verified. Add the migration note: outputs built on `BG` since 2026-08-18 should be re-run.
-- [ ] T019 Create `FEATURE/agent-runs/<UTC-timestamp>-whole-molecule-bond-renumbering/implementation-receipt.md` (Prompt, Final response verbatim, Diff summary, Tests, Unresolved issues, Other information).
+- [X] T017 Complete `FEATURE/wholeMoleculeRenumberingResults.md`: red output, test results, difference report, VMH count, wall time, and behaviours not verified (Rhea; non-isomorphic copies in real corpora).
+- [X] T018 Report the files changed, checks run, tests passed and failed, SC-001–SC-006 and what was not verified. Add the migration note: outputs built on `BG` since 2026-08-18 should be re-run.
+- [X] T019 Create `FEATURE/agent-runs/<UTC-timestamp>-whole-molecule-bond-renumbering/implementation-receipt.md` (Prompt, Final response verbatim, Diff summary, Tests, Unresolved issues, Other information).
 
 ## Implementation notes (2026-11-02)
 
@@ -121,7 +121,8 @@ description: "Task list for whole-molecule bond renumbering"
 - **T004**: besides the failing test, a feature-directory driver ran `molfileEqualityCheck` over all six fixtures on the unchanged source, to name every corrupted case (results file, "Red"). It found 38 of 58, as in the exploration's E33.
 - **T005/T011**: the 23 conserved-output cases rebuild their inputs with builder `sanityChecks = 0`. On those inputs the eight `…Sanity` golden cases raise the pre-existing `identifyIsomorphicClasses` sanity-check error, before and after alike. The recapture (T010) rebuilds the stored inputs with `sanityChecks = 1`, as at their original capture.
 - **T013**: also run against the unchanged builder (`git archive 5a4371497`). It fails there at the shipped-file condensed graph (7 vertices, 10 bonds), so the paper assertions do discriminate.
-- **T015**: the base builder's time on the full collapsed VMH network is taken from its 2026-10-23 pipeline run ("multigraph built in 7646 s", `6bc522da0`, whose builder files are identical to `5a4371497`'s), not re-measured in this session. That run was on another day, under unknown load, so SC-006 is reported with that caveat.
+- **T015**: the base builder's time on the full collapsed VMH network is taken from its 2026-10-23 pipeline run ("multigraph built in 7646 s", `6bc522da0`, whose builder files are identical to `5a4371497`'s), not re-measured in this session. That run was on another day, under unknown load, so SC-006 is reported with that caveat. The new run took 4,219 s (ratio 0.55). Base and new were not run back to back, so the 1.5× repeat rule was not applied.
+- **T015**: 0 of 9,489 VMH metabolites corrupted, and no copy needed the isomorphism search.
 
 ---
 

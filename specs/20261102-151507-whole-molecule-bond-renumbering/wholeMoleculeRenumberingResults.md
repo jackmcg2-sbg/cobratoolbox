@@ -76,3 +76,26 @@ All 23 T005 cases (16 golden cases, the six fixtures and random n = 500, each re
 - **`data/rxnFilesConsistentArms`**: Fig. 11, with 4 vertices (the atom-transition components of citrate's C3, C7, O2 and H8 = the paper's C3, C13, O2, H15) and 6 bonds. The reacting-bond sets are 𝒴₁ `ACONTm` {b, c, d, e}, 𝒴₂ `r0426` {a, d, e, f} and 𝒴₃ `r0317` {a, b, c, f}, with a 2-reaction cover.
 
 With the fixed builder the test passes. With the unchanged builder (`git archive 5a4371497`) it fails: "Shipped files: condensed reacting bond graph has 7 vertices and 10 bonds, expected 6 and 7". All 16 tests pass.
+
+## Full collapsed VMH network (T015, non-CI)
+
+`wholeMoleculeRenumberingCheck` ran the fixed builder on a copy of the 2026-10-23 collapsed-VMH model (`model_screened.mat`) with its RXN folder (`rxns/`, 9,634 reactions), then ran `molfileEqualityCheck`. The job ran 2026-11-02 15:54–17:11 under a 16 GB cap, with peak memory 6,558 MiB.
+
+| Measure | Result |
+|---|---|
+| Metabolites with bonds compared | 9,489 |
+| Corrupted | **0** (E33 on the unchanged builder: 3,533) |
+| Misplaced bonds | 0 |
+| Self-loops | 0 |
+| `nonIsomorphicMolblock` warnings | 0 |
+| Builder wall time | 4,219 s |
+
+- **SC-002**: met.
+- **SC-006** (reported): 4,219 s against 7,646 s for the base builder, a ratio of 0.55, within the 1.10 bound. The base time comes from the 2026-10-23 pipeline run (`6bc522da0`, whose builder files equal `5a4371497`'s), measured on another day under unknown load. Base and new were not run back to back in this session, so the 1.5× repeat rule was not applied. The ratio shows no slowdown, but it is not a controlled speed-up measurement.
+- The builder's existing message "9495 metabolites should be bond mapped, but only 9489 in the dBTM" lists six single-atom metabolites with no bonds (`h[c]`, `cl[c]`, `f[c]`, `br[c]`, `i[c]`, `s[c]`). It is printed by unchanged code and is unrelated to this feature.
+
+## Not verified
+
+- **Rhea**: the fixed builder was not run on the collapsed Rhea corpus, so its molfile-equality count is unmeasured.
+- **Non-isomorphic copies in real corpora**: no VMH copy needed the isomorphism search or raised the FR-003 warning, because every copy equals its reference. The isomorphism path and the warning are covered only by the CI fixtures (`rxnFilesNonIsomorphicCopy`; the planted control).
+- **Downstream outputs**: reacting-moiety outputs built on `BG` since feature 019/020 (2026-08-18) were built on corrupted bond graphs and have not been re-run.
