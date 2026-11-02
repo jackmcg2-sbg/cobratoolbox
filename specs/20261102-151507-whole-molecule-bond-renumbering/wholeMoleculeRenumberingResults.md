@@ -68,3 +68,11 @@ Every case's `dATM` and conserved-moiety outputs are unchanged, and the outcome 
 ## FR-006: conserved outputs before and after (T011)
 
 All 23 T005 cases (16 golden cases, the six fixtures and random n = 500, each rebuilt from RXN files) give identical `L`, `M2M`, `M2R`, `ATG`, `MTG`, `moietyFormulae` and outcome with the fixed builder as with the unchanged one (`compare_conserved`, all identical). All 16 tests in `testReactingMoieties/` pass with the recaptured references.
+
+## The paper's published values (T012–T014)
+
+`testConservedReactingMoieties` now asserts values taken from Rahou et al. (2026):
+- **Shipped RXN files**: `arm.L` = [1 1 1 0; 0 1 1 1] over (h2o, cit, icit, cisa) (App. C.1.1), 6 moiety instances and 6 moiety transitions (§5.7.1), formulae H2O and C6H3O6, and a condensed reacting bond graph of 6 vertices and 7 bonds.
+- **`data/rxnFilesConsistentArms`**: Fig. 11, with 4 vertices (the atom-transition components of citrate's C3, C7, O2 and H8 = the paper's C3, C13, O2, H15) and 6 bonds. The reacting-bond sets are 𝒴₁ `ACONTm` {b, c, d, e}, 𝒴₂ `r0426` {a, d, e, f} and 𝒴₃ `r0317` {a, b, c, f}, with a 2-reaction cover.
+
+With the fixed builder the test passes. With the unchanged builder (`git archive 5a4371497`) it fails: "Shipped files: condensed reacting bond graph has 7 vertices and 10 bonds, expected 6 and 7". All 16 tests pass.
