@@ -1097,45 +1097,66 @@ moietyIndexATG(isCanonicalAtom) = 1:nnz(isCanonicalAtom);
 ATG.Nodes.MoietyIndex = moietyIndexATG;
 clear moietyIndexATG isCanonicalAtom
 
-%recreate a subgraph from each component, from the rows of that component
-%only (see extractPartitionSubgraphs)
-subgraphs = extractPartitionSubgraphs(ATG, atoms2component);
-
-%assign the moiety indices by using the indices for the first
-%component in each isomorphism class, visiting only the member components
-%of each class, in ascending order
-for i=1:nIsomorphismClasses
-    MoietyIndices = subgraphs{firstSubgraphIndices(i)}.Nodes.MoietyIndex;
-    memberComps = find(I2C(i,:)==1);
-    for j=memberComps(memberComps~=firstSubgraphIndices(i))
-        subgraphs{j}.Nodes.MoietyIndex=MoietyIndices;
-    end
-end
-
-%compile the moiety indices from the nodes in the subgraph into the
-%atom transition graph. The nodes of subgraphs{i} are the atoms of component
-%i in ascending order, so with unique atom indices their moiety indices are
-%written to those atoms in one pass; otherwise each atom index is looked up
-if numel(unique(ATG.Nodes.AtomIndex)) == numel(ATG.Nodes.AtomIndex)
+if ~sanityChecks && numel(unique(ATG.Nodes.AtomIndex)) == numel(ATG.Nodes.AtomIndex)
+    %each atom of a member component of an isomorphism class takes the moiety index of
+    %the atom at the same position in the first component of that class, the atoms of a
+    %component taken in ascending order (the node order of extractPartitionSubgraphs).
+    %This is what the subgraph-based assignment below computes, without rebuilding one
+    %subgraph per component; the sanity checks further down read those subgraphs, so
+    %with sanityChecks on they are still built
     atomsByComp = accumarray(atoms2component(:), (1:numel(atoms2component))', [nComps, 1], ...
         @(v) {sort(v(:))});
-    isNonFirstComp = true(nComps, 1);
-    isNonFirstComp(firstSubgraphIndices(firstSubgraphIndices > 0)) = false;
-    nonFirstComps = find(isNonFirstComp);
-    compiledAtoms = vertcat(zeros(0, 1), atomsByComp{nonFirstComps});
-    compiledMoieties = cellfun(@(g) g.Nodes.MoietyIndex, subgraphs(nonFirstComps), ...
-        'UniformOutput', false);
-    compiledMoieties = vertcat(zeros(0, 1), compiledMoieties{:});
     moietyIndexATG = ATG.Nodes.MoietyIndex;
-    moietyIndexATG(compiledAtoms) = compiledMoieties;
+    for i=1:nIsomorphismClasses
+        firstMoieties = moietyIndexATG(atomsByComp{firstSubgraphIndices(i)});
+        memberComps = find(I2C(i,:)==1);
+        for j=memberComps(memberComps~=firstSubgraphIndices(i))
+            moietyIndexATG(atomsByComp{j}) = firstMoieties;
+        end
+    end
     ATG.Nodes.MoietyIndex = moietyIndexATG;
-    clear atomsByComp isNonFirstComp nonFirstComps compiledAtoms compiledMoieties moietyIndexATG
+    clear atomsByComp moietyIndexATG firstMoieties memberComps
 else
-    for i = 1:nComps
-        if ~any(i==firstSubgraphIndices)
-            for j=1:size(subgraphs{i}.Nodes,1)
-                bool = ismember(ATG.Nodes.AtomIndex,subgraphs{i}.Nodes.AtomIndex(j));
-                ATG.Nodes.MoietyIndex(bool) = subgraphs{i}.Nodes.MoietyIndex(j);
+    %recreate a subgraph from each component, from the rows of that component
+    %only (see extractPartitionSubgraphs)
+    subgraphs = extractPartitionSubgraphs(ATG, atoms2component);
+
+    %assign the moiety indices by using the indices for the first
+    %component in each isomorphism class, visiting only the member components
+    %of each class, in ascending order
+    for i=1:nIsomorphismClasses
+        MoietyIndices = subgraphs{firstSubgraphIndices(i)}.Nodes.MoietyIndex;
+        memberComps = find(I2C(i,:)==1);
+        for j=memberComps(memberComps~=firstSubgraphIndices(i))
+            subgraphs{j}.Nodes.MoietyIndex=MoietyIndices;
+        end
+    end
+
+    %compile the moiety indices from the nodes in the subgraph into the
+    %atom transition graph. The nodes of subgraphs{i} are the atoms of component
+    %i in ascending order, so with unique atom indices their moiety indices are
+    %written to those atoms in one pass; otherwise each atom index is looked up
+    if numel(unique(ATG.Nodes.AtomIndex)) == numel(ATG.Nodes.AtomIndex)
+        atomsByComp = accumarray(atoms2component(:), (1:numel(atoms2component))', [nComps, 1], ...
+            @(v) {sort(v(:))});
+        isNonFirstComp = true(nComps, 1);
+        isNonFirstComp(firstSubgraphIndices(firstSubgraphIndices > 0)) = false;
+        nonFirstComps = find(isNonFirstComp);
+        compiledAtoms = vertcat(zeros(0, 1), atomsByComp{nonFirstComps});
+        compiledMoieties = cellfun(@(g) g.Nodes.MoietyIndex, subgraphs(nonFirstComps), ...
+            'UniformOutput', false);
+        compiledMoieties = vertcat(zeros(0, 1), compiledMoieties{:});
+        moietyIndexATG = ATG.Nodes.MoietyIndex;
+        moietyIndexATG(compiledAtoms) = compiledMoieties;
+        ATG.Nodes.MoietyIndex = moietyIndexATG;
+        clear atomsByComp isNonFirstComp nonFirstComps compiledAtoms compiledMoieties moietyIndexATG
+    else
+        for i = 1:nComps
+            if ~any(i==firstSubgraphIndices)
+                for j=1:size(subgraphs{i}.Nodes,1)
+                    bool = ismember(ATG.Nodes.AtomIndex,subgraphs{i}.Nodes.AtomIndex(j));
+                    ATG.Nodes.MoietyIndex(bool) = subgraphs{i}.Nodes.MoietyIndex(j);
+                end
             end
         end
     end
