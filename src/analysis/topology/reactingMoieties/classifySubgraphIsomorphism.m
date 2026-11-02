@@ -163,6 +163,13 @@ function [isomorphismClasses, firstSubgraphIndices, subsequentSubgraphIndices] =
     excludedSubgraphs = false(numSubgraphs, 1);
     isomorphismClassNumber = 0;
 
+    % Only a j with the same node and edge counts as i passes the first invariant check
+    % below, so each leader sweeps only the later members of its own (node count, edge
+    % count) group, in ascending order: the same comparisons, in the same order, as a
+    % sweep of every j > i, without the cost quadratic in numSubgraphs
+    [~, ~, sizeGroup] = unique([numNodesVec, numEdgesVec], 'rows');
+    membersBySize = accumarray(sizeGroup(:), (1:numSubgraphs)', [], @(v) {sort(v(:))'});
+
     for i = 1:numSubgraphs
         if excludedSubgraphs(i)
             continue;
@@ -173,7 +180,8 @@ function [isomorphismClasses, firstSubgraphIndices, subsequentSubgraphIndices] =
         excludedSubgraphs(i) = true;
         subsequentSubgraphIndices(i) = isomorphismClassNumber;
 
-        for j = (i + 1):numSubgraphs
+        candidates = membersBySize{sizeGroup(i)};
+        for j = candidates(candidates > i)
             if excludedSubgraphs(j)
                 continue;
             end
