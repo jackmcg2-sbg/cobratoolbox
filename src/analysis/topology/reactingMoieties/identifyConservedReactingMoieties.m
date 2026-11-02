@@ -857,6 +857,9 @@ end
 % moietyFormulae; it only serves arm.MG and the reacting-moiety analysis.
 % See KNOWN ISSUE KI-001 (src/analysis/topology/reactingMoieties/KNOWN_ISSUES.md).
 if computeMoietyGraphs
+% the component subgraphs are rebuilt before their next use (moiety transition graph);
+% free them while the bond-level structures are held
+clear subgraphs
 %
 % This section builds bond-level structures that mirror the atom-level logic used
 % for conserved moieties, but now at the level of *bond instances*.
@@ -892,7 +895,11 @@ if computeMoietyGraphs
 %   - Each BMG{k} keeps the same node set as bondSubgraphs{k},
 %     but edges contain ONLY bond-instance edges (no atom transition edges).
 %   - BMG is therefore the bond-only view of each bond-mapping component.
-[bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG);
+% Without sanity checks, the subgraphs are needed only for isomorphism classification, so
+% they are extracted label-only (no node tables, only the edge variables the classification
+% reads): the same classes, at a fraction of the memory. The sanity check of
+% identifyIsomorphicClasses reads Nodes.AtomIndex, so it gets the full subgraphs.
+[bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, ~sanityChecks);
 % STEP B2 — Separate conserved vs reacting bond-mapping components
 % This function:
 %   - Identifies the largest isomorphic group of bond-mapping components.
@@ -900,9 +907,11 @@ if computeMoietyGraphs
 % Note: "largest isomorphic group" refers to the most frequent repeating bond-pattern component.
 %   - All remaining components are treated as REACTING (not part of that conserved pattern).
 %
-[CMTG, RMTG, CMG, RMG, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex);
+% Only the two groupings are used here, so the four molecular graphs (CMTG, RMTG, CMG,
+% RMG) are not assembled, and bondSubgraphs is freed as soon as it has been classified.
+[~, ~, ~, ~, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex, false); %#ok<ASGLU>
+clear bondSubgraphs
 CBSubgrahs=BMG(conservedGroups);
-RBSubgraph=BMG(reactingGroups);
 % STEP B3 — Compute bond isomorphism classes (within conserved components only)
 % We identify isomorphic classes among the conserved bond components:
 [bondIsomorphismClasses, bondFirstSubgraphIndices, bondSubsequentSubgraphIndices] = identifyIsomorphicClasses(CBSubgrahs, sanityChecks);
@@ -934,6 +943,8 @@ bonds2isomorphismClass = zeros(nBonds, 1);
 for i = 1:length(CBSubgrahs)
     bonds2isomorphismClass(bmgEdgeIndex{conservedGroups(i)}) = bondSubsequentSubgraphIndices(i);
 end
+% the bond-mapping graphs are not needed below; free them before the moiety graphs
+clear BMG CBSubgrahs bmgEdgeIndex
 %map BIG to connected component and isomorphism class
 % Extract the table of nodes from the graph BIG
 % This contains node-related information such as names or attributes.
@@ -1077,54 +1088,75 @@ if sanityChecks
     end
 end
 
-%add the moiety indices for the first atoms in each moiety
-moietyInd=1;
-for i=1:nAtoms
-    if ATG.Nodes.IsCanonical(i)
-        ATG.Nodes.MoietyIndex(i)=moietyInd;
-        moietyInd = moietyInd + 1;
-    end
-end
+%add the moiety indices for the first atoms in each moiety: the canonical atoms are
+%numbered 1, 2, ... in atom order (one assignment of the column instead of one table
+%write per atom, which copied the column each time)
+moietyIndexATG = ATG.Nodes.MoietyIndex;
+isCanonicalAtom = ATG.Nodes.IsCanonical;
+moietyIndexATG(isCanonicalAtom) = 1:nnz(isCanonicalAtom);
+ATG.Nodes.MoietyIndex = moietyIndexATG;
+clear moietyIndexATG isCanonicalAtom
 
-%recreate a subgraph from each component, from the rows of that component
-%only (see extractPartitionSubgraphs)
-subgraphs = extractPartitionSubgraphs(ATG, atoms2component);
-
-%assign the moiety indices by using the indices for the first
-%component in each isomorphism class, visiting only the member components
-%of each class, in ascending order
-for i=1:nIsomorphismClasses
-    MoietyIndices = subgraphs{firstSubgraphIndices(i)}.Nodes.MoietyIndex;
-    memberComps = find(I2C(i,:)==1);
-    for j=memberComps(memberComps~=firstSubgraphIndices(i))
-        subgraphs{j}.Nodes.MoietyIndex=MoietyIndices;
-    end
-end
-
-%compile the moiety indices from the nodes in the subgraph into the
-%atom transition graph. The nodes of subgraphs{i} are the atoms of component
-%i in ascending order, so with unique atom indices their moiety indices are
-%written to those atoms in one pass; otherwise each atom index is looked up
-if numel(unique(ATG.Nodes.AtomIndex)) == numel(ATG.Nodes.AtomIndex)
+if ~sanityChecks && numel(unique(ATG.Nodes.AtomIndex)) == numel(ATG.Nodes.AtomIndex)
+    %each atom of a member component of an isomorphism class takes the moiety index of
+    %the atom at the same position in the first component of that class, the atoms of a
+    %component taken in ascending order (the node order of extractPartitionSubgraphs).
+    %This is what the subgraph-based assignment below computes, without rebuilding one
+    %subgraph per component; the sanity checks further down read those subgraphs, so
+    %with sanityChecks on they are still built
     atomsByComp = accumarray(atoms2component(:), (1:numel(atoms2component))', [nComps, 1], ...
         @(v) {sort(v(:))});
-    isNonFirstComp = true(nComps, 1);
-    isNonFirstComp(firstSubgraphIndices(firstSubgraphIndices > 0)) = false;
-    nonFirstComps = find(isNonFirstComp);
-    compiledAtoms = vertcat(zeros(0, 1), atomsByComp{nonFirstComps});
-    compiledMoieties = cellfun(@(g) g.Nodes.MoietyIndex, subgraphs(nonFirstComps), ...
-        'UniformOutput', false);
-    compiledMoieties = vertcat(zeros(0, 1), compiledMoieties{:});
     moietyIndexATG = ATG.Nodes.MoietyIndex;
-    moietyIndexATG(compiledAtoms) = compiledMoieties;
+    for i=1:nIsomorphismClasses
+        firstMoieties = moietyIndexATG(atomsByComp{firstSubgraphIndices(i)});
+        memberComps = find(I2C(i,:)==1);
+        for j=memberComps(memberComps~=firstSubgraphIndices(i))
+            moietyIndexATG(atomsByComp{j}) = firstMoieties;
+        end
+    end
     ATG.Nodes.MoietyIndex = moietyIndexATG;
-    clear atomsByComp isNonFirstComp nonFirstComps compiledAtoms compiledMoieties moietyIndexATG
+    clear atomsByComp moietyIndexATG firstMoieties memberComps
 else
-    for i = 1:nComps
-        if ~any(i==firstSubgraphIndices)
-            for j=1:size(subgraphs{i}.Nodes,1)
-                bool = ismember(ATG.Nodes.AtomIndex,subgraphs{i}.Nodes.AtomIndex(j));
-                ATG.Nodes.MoietyIndex(bool) = subgraphs{i}.Nodes.MoietyIndex(j);
+    %recreate a subgraph from each component, from the rows of that component
+    %only (see extractPartitionSubgraphs)
+    subgraphs = extractPartitionSubgraphs(ATG, atoms2component);
+
+    %assign the moiety indices by using the indices for the first
+    %component in each isomorphism class, visiting only the member components
+    %of each class, in ascending order
+    for i=1:nIsomorphismClasses
+        MoietyIndices = subgraphs{firstSubgraphIndices(i)}.Nodes.MoietyIndex;
+        memberComps = find(I2C(i,:)==1);
+        for j=memberComps(memberComps~=firstSubgraphIndices(i))
+            subgraphs{j}.Nodes.MoietyIndex=MoietyIndices;
+        end
+    end
+
+    %compile the moiety indices from the nodes in the subgraph into the
+    %atom transition graph. The nodes of subgraphs{i} are the atoms of component
+    %i in ascending order, so with unique atom indices their moiety indices are
+    %written to those atoms in one pass; otherwise each atom index is looked up
+    if numel(unique(ATG.Nodes.AtomIndex)) == numel(ATG.Nodes.AtomIndex)
+        atomsByComp = accumarray(atoms2component(:), (1:numel(atoms2component))', [nComps, 1], ...
+            @(v) {sort(v(:))});
+        isNonFirstComp = true(nComps, 1);
+        isNonFirstComp(firstSubgraphIndices(firstSubgraphIndices > 0)) = false;
+        nonFirstComps = find(isNonFirstComp);
+        compiledAtoms = vertcat(zeros(0, 1), atomsByComp{nonFirstComps});
+        compiledMoieties = cellfun(@(g) g.Nodes.MoietyIndex, subgraphs(nonFirstComps), ...
+            'UniformOutput', false);
+        compiledMoieties = vertcat(zeros(0, 1), compiledMoieties{:});
+        moietyIndexATG = ATG.Nodes.MoietyIndex;
+        moietyIndexATG(compiledAtoms) = compiledMoieties;
+        ATG.Nodes.MoietyIndex = moietyIndexATG;
+        clear atomsByComp isNonFirstComp nonFirstComps compiledAtoms compiledMoieties moietyIndexATG
+    else
+        for i = 1:nComps
+            if ~any(i==firstSubgraphIndices)
+                for j=1:size(subgraphs{i}.Nodes,1)
+                    bool = ismember(ATG.Nodes.AtomIndex,subgraphs{i}.Nodes.AtomIndex(j));
+                    ATG.Nodes.MoietyIndex(bool) = subgraphs{i}.Nodes.MoietyIndex(j);
+                end
             end
         end
     end
@@ -1185,25 +1217,15 @@ moietyBondIndex = zeros(nBonds, 1);
 endNodes = BIG.Edges.EndNodes; % EndNodes of the edges in BIG
 isomorphismClass = BIG.Edges.IsomorphismClass; % Isomorphism class of edges
 
-% Loop through all edges in BIG
-for i = 1:height(BIG.Edges)
-    % Check if the IsomorphismClass is not equal to 0 (only for conserved Bonds)
-    if isomorphismClass(i) ~= 0
-        % Retrieve the IDs of the end nodes of the current edge
-        id1 = endNodes(i, 1); % First node ID
-        id2 = endNodes(i, 2); % Second node ID
-
-        % Get the MoietyIndex values for the two end nodes from ATG
-        moietyIndex1 = ATG.Nodes.MoietyIndex(id1); % MoietyIndex of the first node
-        moietyIndex2 = ATG.Nodes.MoietyIndex(id2); % MoietyIndex of the second node
-
-        % If the MoietyIndex values of both nodes are the same
-        if moietyIndex1 == moietyIndex2
-            % Assign the MoietyIndex value to the moietyBondIndex for this edge
-            moietyBondIndex(i) = moietyIndex1;
-        end
-    end
-end
+% For every conserved bond (IsomorphismClass not 0) whose two end atoms lie in the same
+% moiety, that moiety's index (vectorised over the edges of BIG; same values as the
+% per-edge loop it replaces)
+moietyOfAtom = ATG.Nodes.MoietyIndex;
+moietyIndex1 = moietyOfAtom(endNodes(:, 1)); % MoietyIndex of the first end node
+moietyIndex2 = moietyOfAtom(endNodes(:, 2)); % MoietyIndex of the second end node
+isMoietyBond = isomorphismClass ~= 0 & moietyIndex1 == moietyIndex2;
+moietyBondIndex(isMoietyBond) = moietyIndex1(isMoietyBond);
+clear moietyOfAtom moietyIndex1 moietyIndex2 isMoietyBond
 
 % Extract the edge table from BIG
 edgeTable = BIG.Edges;

@@ -15,6 +15,14 @@
 %       0 and 1, and for the coaX and crnM bond-key fixtures (reoriented atom transitions,
 %       moieties without internal bonds, multi-member isomorphism classes). Every case must
 %       give identical outputs, or raise the identical error.
+%     - Full-mode golden comparison (feature 20261102-092909-reacting-moiety-memory, spec
+%       FR-002, FR-007, SC-001): data/reactingMoietyMemoryReference.mat holds the outputs (or
+%       the error) of identifyConservedReactingMoieties in full mode, captured before its
+%       bond-mapping stage was changed to save memory, for the coaM, coaX, coaR, crn and crnM
+%       bond-key fixtures with sanityChecks 0 and 1 (with sanityChecks 1 each raises the
+%       pre-existing identifyIsomorphicClasses sanity-check error, which is pinned as is).
+%       Planted differences in arm.MG, L and reacting.ReactMoietyGraphs must be detected by
+%       the comparison, so its passing is evidence.
 %
 %     Derived from tutorials/analysis/reactingMoieties/tutorial_conservedAndReactingMoieties.m
 %     (feature 004-reacting-moieties-test). Figures are generated but not displayed.
@@ -22,6 +30,7 @@
 % Authors:
 %     - COBRA Toolbox, repurposed from the tutorial by Hadjar Rahou & Ronan M.T. Fleming.
 %     - COBRA Toolbox, feature 20260929-111453-conserved-moiety-table-hotspots (golden comparison)
+%     - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory (full-mode golden cases)
 %
 
 global CBTDIR
@@ -171,6 +180,42 @@ for k = 1:numel(goldenReference.goldenCases)
             strcmp(goldenReference.goldenCases(k).milpSolver, CBT_MILP_SOLVER));
     end
 end
+
+% --- feature 20261102-092909: full-mode golden comparison on the bond-key fixtures ---
+memoryReference = load([fileDir filesep 'data' filesep 'reactingMoietyMemoryReference.mat']);
+for k = 1:numel(memoryReference.goldenCases)
+    checkGoldenCase(memoryReference.goldenCases(k), ...
+        strcmp(memoryReference.goldenCases(k).milpSolver, CBT_MILP_SOLVER));
+end
+
+% planted differences: isequaln must report each one, so the comparisons above can fail
+hasControlData = arrayfun(@(c) strcmp(c.outcome, 'ok') && ~isempty(c.arm.MG) && ...
+    nnz(c.arm.L) > 0 && ~isempty(c.reacting.ReactMoietyGraphs), memoryReference.goldenCases);
+assert(any(hasControlData), 'No full-mode golden case has the outputs the controls perturb.');
+controlCase = memoryReference.goldenCases(find(hasControlData, 1));
+controlGraphs = controlCase.arm.MG;
+controlGraphs{1} = addnode(controlGraphs{1}, 1);
+assert(~isequaln(controlGraphs, controlCase.arm.MG), ...
+    'A node added to an arm.MG graph is not detected.');
+controlGraphs = controlCase.arm.MG;
+graphIndex = find(cellfun(@numnodes, controlGraphs) > 0, 1);
+controlNodes = controlGraphs{graphIndex}.Nodes;
+numericVariables = controlNodes.Properties.VariableNames(varfun(@isnumeric, controlNodes, ...
+    'OutputFormat', 'uniform'));
+controlNodes.(numericVariables{1})(1) = controlNodes.(numericVariables{1})(1) + 1;
+controlGraphs{graphIndex} = feval(class(controlGraphs{graphIndex}), ...
+    controlGraphs{graphIndex}.Edges, controlNodes);
+assert(~isequaln(controlGraphs, controlCase.arm.MG), ...
+    'A changed numeric node value in an arm.MG graph is not detected.');
+controlL = controlCase.arm.L;
+[rowIndex, columnIndex] = find(controlL, 1);
+controlL(rowIndex, columnIndex) = controlL(rowIndex, columnIndex) + 1;
+assert(~isequaln(controlL, controlCase.arm.L), 'A changed entry of arm.L is not detected.');
+controlReacting = controlCase.reacting.ReactMoietyGraphs;
+controlReacting{end} = addedge(controlReacting{end}, 1, 1);
+assert(~isequaln(controlReacting, controlCase.reacting.ReactMoietyGraphs), ...
+    'An edge added to a reacting-moiety graph is not detected.');
+clear memoryReference controlCase controlGraphs controlNodes controlL controlReacting
 
 % identify conserved and reacting moieties
 options.sanityChecks = 0;
