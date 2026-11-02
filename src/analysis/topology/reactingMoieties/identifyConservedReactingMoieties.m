@@ -1088,14 +1088,14 @@ if sanityChecks
     end
 end
 
-%add the moiety indices for the first atoms in each moiety
-moietyInd=1;
-for i=1:nAtoms
-    if ATG.Nodes.IsCanonical(i)
-        ATG.Nodes.MoietyIndex(i)=moietyInd;
-        moietyInd = moietyInd + 1;
-    end
-end
+%add the moiety indices for the first atoms in each moiety: the canonical atoms are
+%numbered 1, 2, ... in atom order (one assignment of the column instead of one table
+%write per atom, which copied the column each time)
+moietyIndexATG = ATG.Nodes.MoietyIndex;
+isCanonicalAtom = ATG.Nodes.IsCanonical;
+moietyIndexATG(isCanonicalAtom) = 1:nnz(isCanonicalAtom);
+ATG.Nodes.MoietyIndex = moietyIndexATG;
+clear moietyIndexATG isCanonicalAtom
 
 %recreate a subgraph from each component, from the rows of that component
 %only (see extractPartitionSubgraphs)
@@ -1196,25 +1196,15 @@ moietyBondIndex = zeros(nBonds, 1);
 endNodes = BIG.Edges.EndNodes; % EndNodes of the edges in BIG
 isomorphismClass = BIG.Edges.IsomorphismClass; % Isomorphism class of edges
 
-% Loop through all edges in BIG
-for i = 1:height(BIG.Edges)
-    % Check if the IsomorphismClass is not equal to 0 (only for conserved Bonds)
-    if isomorphismClass(i) ~= 0
-        % Retrieve the IDs of the end nodes of the current edge
-        id1 = endNodes(i, 1); % First node ID
-        id2 = endNodes(i, 2); % Second node ID
-
-        % Get the MoietyIndex values for the two end nodes from ATG
-        moietyIndex1 = ATG.Nodes.MoietyIndex(id1); % MoietyIndex of the first node
-        moietyIndex2 = ATG.Nodes.MoietyIndex(id2); % MoietyIndex of the second node
-
-        % If the MoietyIndex values of both nodes are the same
-        if moietyIndex1 == moietyIndex2
-            % Assign the MoietyIndex value to the moietyBondIndex for this edge
-            moietyBondIndex(i) = moietyIndex1;
-        end
-    end
-end
+% For every conserved bond (IsomorphismClass not 0) whose two end atoms lie in the same
+% moiety, that moiety's index (vectorised over the edges of BIG; same values as the
+% per-edge loop it replaces)
+moietyOfAtom = ATG.Nodes.MoietyIndex;
+moietyIndex1 = moietyOfAtom(endNodes(:, 1)); % MoietyIndex of the first end node
+moietyIndex2 = moietyOfAtom(endNodes(:, 2)); % MoietyIndex of the second end node
+isMoietyBond = isomorphismClass ~= 0 & moietyIndex1 == moietyIndex2;
+moietyBondIndex(isMoietyBond) = moietyIndex1(isMoietyBond);
+clear moietyOfAtom moietyIndex1 moietyIndex2 isMoietyBond
 
 % Extract the edge table from BIG
 edgeTable = BIG.Edges;
