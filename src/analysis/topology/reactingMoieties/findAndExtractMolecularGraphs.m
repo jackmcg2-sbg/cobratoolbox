@@ -1,10 +1,11 @@
-function [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex)
+function [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex, computeGraphs)
 % Identify conserved and reacting isomorphic groups of bond subgraphs and extract the associated molecular graphs
 %
 % USAGE:
 %
 %    [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs)
 %    [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex)
+%    [~, ~, ~, ~, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex, false)
 %
 % INPUTS:
 %    BIG:              the original bond instance graph containing all bonds and nodes, with fields:
@@ -18,6 +19,10 @@ function [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtract
 %    bmgEdgeIndex:     cell array, the same size as `BMG`, holding the `EdgeIndex` values of
 %                      the edges of each `BMG{m}` (third output of `extractBondSubgraphs`).
 %                      If omitted or empty, it is read from `BMG{m}.Edges.EdgeIndex`.
+%    computeGraphs:    logical, default true. If false, only `conservedGroup` and
+%                      `reactingGroups` are computed and `CMTG`, `RMTG`, `CMG` and `RMG` are
+%                      returned empty (`[]`); this saves the time and memory of assembling
+%                      them when the caller needs only the grouping.
 %
 % OUTPUTS:
 %    CMTG:             conserved molecular transition graph from `bondSubgraphs`
@@ -47,6 +52,14 @@ function [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtract
     [~, largestGroupIndex] = max(cellfun(@length, isomorphicGroups));
     conservedGroup = isomorphicGroups{largestGroupIndex};
     reactingGroups = setdiff(1:numSubgraphs, conservedGroup);
+
+    if exist('computeGraphs', 'var') && ~isempty(computeGraphs) && ~computeGraphs
+        CMTG = [];
+        RMTG = [];
+        CMG = [];
+        RMG = [];
+        return
+    end
 
     % Step 2: Create CMTG and RMTG from bondSubgraphs
     CMTG = assembleMolecularTransitionGraph(bondSubgraphs, conservedGroup); % Conserved Molecular Transition Graph

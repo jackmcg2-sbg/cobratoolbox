@@ -857,6 +857,9 @@ end
 % moietyFormulae; it only serves arm.MG and the reacting-moiety analysis.
 % See KNOWN ISSUE KI-001 (src/analysis/topology/reactingMoieties/KNOWN_ISSUES.md).
 if computeMoietyGraphs
+% the component subgraphs are rebuilt before their next use (moiety transition graph);
+% free them while the bond-level structures are held
+clear subgraphs
 %
 % This section builds bond-level structures that mirror the atom-level logic used
 % for conserved moieties, but now at the level of *bond instances*.
@@ -900,9 +903,11 @@ if computeMoietyGraphs
 % Note: "largest isomorphic group" refers to the most frequent repeating bond-pattern component.
 %   - All remaining components are treated as REACTING (not part of that conserved pattern).
 %
-[CMTG, RMTG, CMG, RMG, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex);
+% Only the two groupings are used here, so the four molecular graphs (CMTG, RMTG, CMG,
+% RMG) are not assembled, and bondSubgraphs is freed as soon as it has been classified.
+[~, ~, ~, ~, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex, false); %#ok<ASGLU>
+clear bondSubgraphs
 CBSubgrahs=BMG(conservedGroups);
-RBSubgraph=BMG(reactingGroups);
 % STEP B3 — Compute bond isomorphism classes (within conserved components only)
 % We identify isomorphic classes among the conserved bond components:
 [bondIsomorphismClasses, bondFirstSubgraphIndices, bondSubsequentSubgraphIndices] = identifyIsomorphicClasses(CBSubgrahs, sanityChecks);
@@ -934,6 +939,8 @@ bonds2isomorphismClass = zeros(nBonds, 1);
 for i = 1:length(CBSubgrahs)
     bonds2isomorphismClass(bmgEdgeIndex{conservedGroups(i)}) = bondSubsequentSubgraphIndices(i);
 end
+% the bond-mapping graphs are not needed below; free them before the moiety graphs
+clear BMG CBSubgrahs bmgEdgeIndex
 %map BIG to connected component and isomorphism class
 % Extract the table of nodes from the graph BIG
 % This contains node-related information such as names or attributes.

@@ -44,6 +44,25 @@ for c = 1:numel(cacheForms)
         cacheLabels{c});
 end
 
+% --- computeGraphs (feature 20261102-092909-reacting-moiety-memory, spec FR-004, contract
+% contracts/new-optional-inputs.md): false returns only the groups; true and empty are the
+% default ---
+[CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs( ...
+    ciInputs.BIG, ciExpected.BMG, ciExpected.bondSubgraphs, [], false);
+assert(isequal(conservedGroup, ciExpected.conservedGroup) && ...
+    isequal(reactingGroups, ciExpected.reactingGroups), ...
+    'findAndExtractMolecularGraphs groups differ from the reference with computeGraphs = false.');
+assert(isequal(CMTG, []) && isequal(RMTG, []) && isequal(CMG, []) && isequal(RMG, []), ...
+    'findAndExtractMolecularGraphs returns graphs with computeGraphs = false.');
+computeGraphsForms = {true, []};
+computeGraphsLabels = {'computeGraphs = true', 'computeGraphs empty'};
+for c = 1:numel(computeGraphsForms)
+    [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtractMolecularGraphs( ...
+        ciInputs.BIG, ciExpected.BMG, ciExpected.bondSubgraphs, [], computeGraphsForms{c});
+    assertMatchesReference(ciExpected, CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups, ...
+        computeGraphsLabels{c});
+end
+
 % --- planted difference: a changed group must be detected (feature
 % 20261102-092909-reacting-moiety-memory) ---
 plantedGroup = ciExpected.conservedGroup;
