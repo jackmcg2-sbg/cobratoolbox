@@ -41,7 +41,7 @@ Prototypes of all six exist, as one commit each on the local branch `perf/reacti
 
 **Project Type**: scientific MATLAB library.
 
-**Performance Goals**: SC-003, a peak ratio ≤ 0.50 at random n = 1,000 (proposed hard gate). SC-004, a time ratio ≤ 0.80 (reported).
+**Performance Goals**: SC-003 (hard gate), an identification-window peak-RSS ratio ≤ 0.50 at random n = 1,000, median of 2 alternating runs. SC-004 (reported), a time ratio ≤ 0.80.
 
 **Constraints**:
 - Outputs are identical (`isequaln`).

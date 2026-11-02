@@ -53,6 +53,12 @@ They do not make the full 9,634-reaction network feasible. Each bond-mapping com
 | P5 | `3fdf63f88` | Moiety indices are copied to member components through the atom-to-component map, without rebuilding the component subgraphs. Used only when `sanityChecks` is off and `AtomIndex` is unique. |
 | P6 | `868308670` | `classifySubgraphIsomorphism` builds label-only copies on first use, and frees each subgraph's cached copy, adjacency, certificate and hashes once it is classified. |
 
+## Clarifications
+
+### Session 2026-11-02
+
+- Q: Is SC-003 a hard gate or reported only? → A: **A hard gate** (maintainer, 2026-11-02: "yes go with the hard gate"). It is measured on per-process peak RSS inside the identification window, which is steadier than the scope's `memory.current` because it does not count page cache (exploration E20).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Same outputs, less memory (Priority: P1)
@@ -128,7 +134,7 @@ A maintainer changes one of these functions later. They need every new optional 
 
 - **SC-001**: On every CI golden case (the existing six and the new full-mode cases), outputs are identical to those captured before the change, and so is every new unit-level reference.
 - **SC-002**: On the local random n = 100, 250, 500 and 1,000 and bfs n = 500 checkpoints, full-mode outputs are identical to the base, and all four negative controls are detected.
-- **SC-003**: At random n = 1,000, the identification-window peak memory is at most 0.50 of the base, measured as the median of 2 alternating runs of each. The prototypes measured 0.35, N = 1. [NEEDS CLARIFICATION: is SC-003 a hard gate, or reported only? A hard gate is proposed.]
+- **SC-003** *(hard gate)*: At random n = 1,000, the peak resident memory (RSS) of the MATLAB process inside the identification window is at most 0.50 of the base. Both are measured back to back as the median of 2 alternating runs of each, so the gate is a ratio of the medians. The prototypes measured 0.35 on the scope's `memory.current`, N = 1. A gate run whose results are inconsistent is repeated rather than judged, and both runs are recorded. Inconsistent means either run of a pair is more than 1.5× its sibling, for example because of other load on the machine.
 - **SC-004**: Identification time at random n = 1,000 is at most 0.80 of the base. This is reported, not a gate; the prototypes measured 0.61.
 - **SC-005**: All tests under `test/verifiedTests/analysis/testReactingMoieties/` pass after each of the six commits. Each extended test also detects its planted differences.
 - **SC-006**: The diagnostic `isisomorphic` call count is unchanged on every classification reference case.

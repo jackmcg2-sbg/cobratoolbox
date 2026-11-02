@@ -15,8 +15,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-  - Note: one is left, on SC-003: hard gate or reported.
+- [x] No [NEEDS CLARIFICATION] markers remain
+  - Note: the SC-003 marker was resolved on 2026-11-02: a hard gate on peak RSS.
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -36,4 +36,4 @@
 
 ## Notes
 
-- The SC-003 marker is for the maintainer to resolve in review, or through `/speckit-clarify`, before `/speckit-implement`.
+- SC-003 was resolved by the maintainer on 2026-11-02 (spec, Clarifications).

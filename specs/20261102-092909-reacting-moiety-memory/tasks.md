@@ -102,7 +102,7 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
     1. take a reactingMoieties folder, put it first on the path, and assert `which identifyConservedReactingMoieties`;
     2. load a copied checkpoint and run identification in full mode with `sanityChecks = 0`;
     3. save the outputs, and compare two output folders field by field with `isequaln`, including the four controls;
-    4. log the identification start and end, for the identification-window peak.
+    4. log the identification start and end. Reset the process's peak RSS at the start, by writing `5` to `/proc/self/clear_refs`, and read `VmHWM` from `/proc/self/status` at the end. That value is the identification-window peak RSS that SC-003 gates on.
   - **`.sh`**:
     - runs one capped scope per MATLAB run, sampling `memory.current` every second and recording `memory.peak` and RSS;
     - its modes are `selfcheck`, `equality` and `memory`.
@@ -130,7 +130,7 @@ description: "Task list for lowering the memory of full-mode reacting-moiety ide
 ## Phase 4: Verification and close-out
 
 - [ ] T017 [US1] Run `reactingMoietyMemoryCheck.sh equality` on the five copied checkpoints, `WORK/base/RM` against `RM` (SC-002). All outputs must be `isequaln`, and all controls detected.
-- [ ] T018 [US1] Run `reactingMoietyMemoryCheck.sh memory`: 2 alternating runs each of base and new at random n = 1,000 (SC-003, SC-004). Report the ratio of the median identification-window peaks, and of the median times. The SC-003 threshold applies as resolved in clarification. A run that is inconsistent (more than 1.5× its sibling, for example because of other load on the machine) is repeated, and both runs are recorded.
+- [ ] T018 [US1] Run `reactingMoietyMemoryCheck.sh memory`: 2 alternating runs each of base and new at random n = 1,000 (SC-003, SC-004). Report the ratio of the median identification-window peak RSS, and of the median times. SC-003 is a hard gate: a ratio above 0.50 fails the feature, so stop and report rather than continue to T019. A run that is inconsistent (more than 1.5× its sibling, for example because of other load on the machine) is repeated, and both runs are recorded.
 - [ ] T019 [P] Static review (FR-001, FR-009, FR-010):
   - `git diff BASE -- RM` touches only the four files;
   - the help text documents both options;

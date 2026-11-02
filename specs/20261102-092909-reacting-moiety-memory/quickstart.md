@@ -42,7 +42,7 @@ Run `FEATURE/reactingMoietyMemoryCheck.sh equality`. This covers random n = 100,
 Then run `FEATURE/reactingMoietyMemoryCheck.sh memory`. This alternates 2 runs each of base and new at random n = 1,000.
 
 **Expected**:
-- peak ratio ≤ 0.50 (SC-003);
+- identification-window peak-RSS ratio ≤ 0.50 (SC-003, hard gate);
 - the time ratio is reported (SC-004).
 
 The results are written to `FEATURE/reactingMoietyMemoryResults.md`.
