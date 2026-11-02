@@ -15,7 +15,7 @@ function [CMTG, RMTG, CMG, RMG, conservedGroup, reactingGroups] = findAndExtract
 %    BMG:              cell array containing bond mapping graphs (subgraphs)
 %    bondSubgraphs:    cell array where each cell contains a subgraph representing a set of bonds mapped to each other
 %
-% OPTIONAL INPUT:
+% OPTIONAL INPUTS:
 %    bmgEdgeIndex:     cell array, the same size as `BMG`, holding the `EdgeIndex` values of
 %                      the edges of each `BMG{m}` (third output of `extractBondSubgraphs`).
 %                      If omitted or empty, it is read from `BMG{m}.Edges.EdgeIndex`.

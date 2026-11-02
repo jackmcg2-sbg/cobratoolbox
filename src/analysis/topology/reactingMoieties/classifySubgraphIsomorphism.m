@@ -72,10 +72,21 @@ function [isomorphismClasses, firstSubgraphIndices, subsequentSubgraphIndices] =
 %    still counts one comparison per candidate pair, whichever method decides it
 %    (feature 20261012-093525-symmetric-iso-zero-bond).
 %
+%    Only subgraphs with the same node and edge counts can pass the first
+%    invariant check, so each class leader is compared only with the later
+%    members of its own (node count, edge count) group, in ascending order: the
+%    same comparisons, in the same order, without a sweep over every later
+%    subgraph. A subgraph's label-only copy is built only for a comparison that
+%    identical edge lists do not decide, and its cached copy, adjacency,
+%    certificate and hashes are freed once it is never compared again; the
+%    classes and the call count are unchanged (feature
+%    20261102-092909-reacting-moiety-memory).
+%
 % Author:
 %    - COBRA Toolbox, feature 021-prefilter-isomorphism-classification
 %    - COBRA Toolbox, feature 20260930-102230-isomorphism-label-only-copies
 %    - COBRA Toolbox, feature 20261012-093525-symmetric-iso-zero-bond
+%    - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory
 
     persistent isisomorphicCallCount fallbackCount
     if isempty(isisomorphicCallCount)

@@ -13,7 +13,7 @@ function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, lab
 %
 %              * .Nodes - node table with `AtomIndex` and `Component` columns
 %
-% OPTIONAL INPUT:
+% OPTIONAL INPUTS:
 %    labelOnly:  logical, default false. If true, each subgraph keeps only what the
 %                isomorphism classification of identifyConservedReactingMoieties reads:
 %                `bondSubgraphs{k}` has no node or edge variables (same nodes, and the
@@ -46,8 +46,9 @@ function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, lab
 %    instead; when `ATG.Nodes.Component` is not the `conncomp(ATG)` labelling, the
 %    previous peeling loop is used.
 %
-% .. Author: - COBRA Toolbox, features 20260921-154310-reacting-moiety-optimisation and
-%              20260928-100409-extract-bond-subgraphs-local-peeling
+% .. Author: - COBRA Toolbox, features 20260921-154310-reacting-moiety-optimisation,
+%              20260928-100409-extract-bond-subgraphs-local-peeling and
+%              20261102-092909-reacting-moiety-memory (labelOnly)
 
 % Find connected components of underlying undirected graph.
 % Each component corresponds to an "atom conservation relation".
