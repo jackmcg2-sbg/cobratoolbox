@@ -1,16 +1,27 @@
-function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG)
+function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, labelOnly)
 % Extract subgraphs of bonds and their mappings from a bond instance graph
 %
 % USAGE:
 %
 %    [bondSubgraphs, BMG] = extractBondSubgraphs(BIG, ATG)
 %    [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG)
+%    [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, labelOnly)
 %
 % INPUTS:
 %    BIG:    bond instance graph, the full weighted bond graph containing all bonds and weights
 %    ATG:    atom transition graph, representing atoms as nodes and their bonds as edges, with field:
 %
 %              * .Nodes - node table with `AtomIndex` and `Component` columns
+%
+% OPTIONAL INPUT:
+%    labelOnly:  logical, default false. If true, each subgraph keeps only what the
+%                isomorphism classification of identifyConservedReactingMoieties reads:
+%                `bondSubgraphs{k}` has no node or edge variables (same nodes, and the
+%                same end nodes in the same order, as the full subgraph), and `BMG{m}`
+%                has no node table and keeps only the edge variables `EndNodes`,
+%                `BondIndex`, `EdgeIndex` and `mets` (same nodes and edge order). This
+%                holds far less memory per subgraph. It applies to the default peeling
+%                path; the fallback paths described below always return full subgraphs.
 %
 % OUTPUTS:
 %    bondSubgraphs:    cell array where each entry represents a subgraph of connected bonds
@@ -47,6 +58,10 @@ else
     %connected components
     atoms2component = conncomp(ATG)'; % Use built-in matlab algorithm. Introduced in R2015b.
     nComps = max(atoms2component);
+end
+
+if ~exist('labelOnly', 'var') || isempty(labelOnly)
+    labelOnly = false;
 end
 
 % A bond instance graph without edges yields no subgraphs
@@ -97,6 +112,9 @@ end
 BIGEdges = BIG.Edges;
 BIGNodes = BIG.Nodes;
 nBIGNodes = numnodes(BIG);
+% edge variables kept by labelOnly (those of them BIG has)
+labelOnlyEdgeVars = intersect({'EndNodes', 'BondIndex', 'EdgeIndex', 'mets'}, ...
+    BIGEdges.Properties.VariableNames, 'stable');
 nEdges = size(endNodes, 1);
 
 % Group the bond instance edges by the unordered pair of components of their end atoms.
@@ -172,12 +190,22 @@ while first <= nEdges
         atgLocalEnds = [min(atgLocalEnds, [], 2), max(atgLocalEnds, [], 2)];
     end
     [~, atgOrder] = sortrows([atgLocalEnds atgRows]);
-    combinedEdges = ATGEdges(atgRows(atgOrder), :);
-    combinedEdges.EndNodes = atgLocalEnds(atgOrder, :);
-    if isDirectedATG
-        combinedSubgraph = digraph(combinedEdges, ATGNodes(nodesInBothComponents, :));
+    if labelOnly
+        % the same nodes and end nodes, without the node and edge tables
+        nCombined = numel(nodesInBothComponents);
+        if isDirectedATG
+            combinedSubgraph = digraph(atgLocalEnds(atgOrder, 1), atgLocalEnds(atgOrder, 2), [], nCombined);
+        else
+            combinedSubgraph = graph(atgLocalEnds(atgOrder, 1), atgLocalEnds(atgOrder, 2), [], nCombined);
+        end
     else
-        combinedSubgraph = graph(combinedEdges, ATGNodes(nodesInBothComponents, :));
+        combinedEdges = ATGEdges(atgRows(atgOrder), :);
+        combinedEdges.EndNodes = atgLocalEnds(atgOrder, :);
+        if isDirectedATG
+            combinedSubgraph = digraph(combinedEdges, ATGNodes(nodesInBothComponents, :));
+        else
+            combinedSubgraph = graph(combinedEdges, ATGNodes(nodesInBothComponents, :));
+        end
     end
 
     % Atoms of the component pair, in the node order of combinedSubgraph
@@ -203,9 +231,14 @@ while first <= nEdges
     rows = rows(order);
 
     % Edge and node tables of the bond instance subgraph of the component pair
-    GEdges = BIGEdges(rows, :);
+    if labelOnly
+        GEdges = BIGEdges(rows, labelOnlyEdgeVars);
+        nGNodes = numel(pairAtoms);
+    else
+        GEdges = BIGEdges(rows, :);
+        GNodes = BIGNodes(pairAtoms, :);
+    end
     GEdges.EndNodes = localEnds(order, :);
-    GNodes = BIGNodes(pairAtoms, :);
 
     % Initialize cell arrays to store the combined subgraphs for each iteration
     combinedSubgraphs = {};
@@ -231,7 +264,17 @@ while first <= nEdges
 
             % Create the Bond Mapping Graph for the current set of bonds
             EdgeTable = GEdges(firstOccurrenceIndices, :);
-            BMgraph{layer, 1} = digraph(EdgeTable, GNodes); %#ok<AGROW>
+            if labelOnly
+                % digraph sorts the edge rows exactly as with the node table; the
+                % isolated nodes of the pair are then appended
+                bmGraph = digraph(EdgeTable);
+                if numnodes(bmGraph) < nGNodes
+                    bmGraph = addnode(bmGraph, nGNodes - numnodes(bmGraph));
+                end
+                BMgraph{layer, 1} = bmGraph; %#ok<AGROW>
+            else
+                BMgraph{layer, 1} = digraph(EdgeTable, GNodes); %#ok<AGROW>
+            end
             BMedgeIdx{layer, 1} = layerEdgeIdx; %#ok<AGROW>
 
             % Add these edges to the combined subgraph

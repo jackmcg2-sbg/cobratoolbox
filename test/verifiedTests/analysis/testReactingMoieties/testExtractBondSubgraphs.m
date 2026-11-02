@@ -132,6 +132,98 @@ if isfield(peeling, 'n332Inputs')
         'extractBondSubgraphs output differs from the pre-change reference (332-reaction subset).');
 end
 
+% --- labelOnly (feature 20261102-092909-reacting-moiety-memory, spec FR-003, contract
+% contracts/new-optional-inputs.md): on the default peeling path each subgraph keeps only what
+% isomorphism classification reads; on the fallback paths labelOnly has no effect ---
+labelOnlyInputs = [{'CI fixture'}, {peeling.peelingCases.name}; ...
+    {ciInputs.BIG}, {peeling.peelingCases.BIG}; {ciInputs.ATG}, {peeling.peelingCases.ATG}]';
+labelOnlyOutcomes = [{'ok'}; {peeling.peelingCases.outcome}'];
+% the inputs whose Component labels are not the conncomp(ATG) labelling take a fallback path
+fallbackNames = {'labelMismatch'};
+for k = 1:size(labelOnlyInputs, 1)
+    if ~strcmp(labelOnlyOutcomes{k}, 'ok')
+        continue
+    end
+    [caseName, caseBIG, caseATG] = labelOnlyInputs{k, :};
+    [fullSubgraphs, fullBMG, fullEdgeIndex] = extractBondSubgraphs(caseBIG, caseATG);
+    [labelSubgraphs, labelBMG, labelEdgeIndex] = extractBondSubgraphs(caseBIG, caseATG, true);
+    assert(isequal(labelEdgeIndex, fullEdgeIndex), ...
+        sprintf('extractBondSubgraphs labelOnly changes bmgEdgeIndex (%s).', caseName));
+    if ismember(caseName, fallbackNames)
+        assert(areGraphCellsEqual(labelSubgraphs, fullSubgraphs) && ...
+            areGraphCellsEqual(labelBMG, fullBMG), ...
+            sprintf('extractBondSubgraphs labelOnly changes a fallback path (%s).', caseName));
+    else
+        keptVariables = intersect({'EndNodes', 'BondIndex', 'EdgeIndex', 'mets'}, ...
+            caseBIG.Edges.Properties.VariableNames, 'stable');
+        assert(isLabelOnlyOf(labelSubgraphs, labelBMG, fullSubgraphs, fullBMG, keptVariables), ...
+            sprintf('extractBondSubgraphs labelOnly outputs are not label-only copies (%s).', caseName));
+    end
+    % an empty labelOnly and labelOnly = false are the default
+    [defaultSubgraphs, defaultBMG] = extractBondSubgraphs(caseBIG, caseATG, []);
+    [falseSubgraphs, falseBMG] = extractBondSubgraphs(caseBIG, caseATG, false);
+    assert(areGraphCellsEqual(defaultSubgraphs, fullSubgraphs) && ...
+        areGraphCellsEqual(defaultBMG, fullBMG) && ...
+        areGraphCellsEqual(falseSubgraphs, fullSubgraphs) && areGraphCellsEqual(falseBMG, fullBMG), ...
+        sprintf('extractBondSubgraphs with labelOnly empty or false is not the default (%s).', caseName));
+end
+
+% fallback inputs give the reference outputs, or raise the reference error, with labelOnly
+for k = 1:numel(fallbackCases)
+    fallbackCase = fallbackCases(k);
+    if strcmp(fallbackCase.outcome, 'ok')
+        [caseSubgraphs, caseBMG] = extractBondSubgraphs(fallbackCase.BIG, fallbackCase.ATG, true);
+        assert(areGraphCellsEqual(caseSubgraphs, fallbackCase.bondSubgraphs) && ...
+            areGraphCellsEqual(caseBMG, fallbackCase.BMG), ...
+            sprintf('extractBondSubgraphs labelOnly changes a fallback path (%s).', fallbackCase.name));
+    else
+        errorRaised = false;
+        try
+            extractBondSubgraphs(fallbackCase.BIG, fallbackCase.ATG, true);
+        catch ME
+            errorRaised = true;
+            assert(strcmp(ME.identifier, fallbackCase.errorIdentifier) && ...
+                strcmp(ME.message, fallbackCase.errorMessage), ...
+                sprintf(['extractBondSubgraphs labelOnly raised a different error (%s): expected ' ...
+                '%s: %s; got %s: %s (%s:%d).'], fallbackCase.name, fallbackCase.errorIdentifier, ...
+                fallbackCase.errorMessage, ME.identifier, ME.message, ME.stack(1).file, ...
+                ME.stack(1).line));
+        end
+        assert(errorRaised, sprintf('extractBondSubgraphs labelOnly returned normally (%s).', ...
+            fallbackCase.name));
+    end
+end
+
+% label-only and full subgraphs classify identically, unlabelled (as findAndExtractMolecularGraphs
+% does) and with mets edge labels (as identifyIsomorphicClasses does), on the CI fixture
+[fullSubgraphs, fullBMG] = extractBondSubgraphs(ciInputs.BIG, ciInputs.ATG);
+[labelSubgraphs, labelBMG] = extractBondSubgraphs(ciInputs.BIG, ciInputs.ATG, true);
+[fullClasses, fullFirsts, fullSubs] = classifySubgraphIsomorphism(fullSubgraphs);
+[labelClasses, labelFirsts, labelSubs] = classifySubgraphIsomorphism(labelSubgraphs);
+assert(isequal(labelClasses, fullClasses) && isequal(labelFirsts, fullFirsts) && ...
+    isequal(labelSubs, fullSubs), 'Label-only bond subgraphs classify differently, unlabelled.');
+[fullClasses, fullFirsts, fullSubs] = identifyIsomorphicClasses(fullBMG, false);
+[labelClasses, labelFirsts, labelSubs] = identifyIsomorphicClasses(labelBMG, false);
+assert(isequal(labelClasses, fullClasses) && isequal(labelFirsts, fullFirsts) && ...
+    isequal(labelSubs, fullSubs), 'Label-only bond mapping graphs classify differently with mets labels.');
+
+% planted differences: the label-only check must reject an extra variable and a moved end node
+keptVariables = intersect({'EndNodes', 'BondIndex', 'EdgeIndex', 'mets'}, ...
+    ciInputs.BIG.Edges.Properties.VariableNames, 'stable');
+plantedSubgraphs = labelSubgraphs;
+plantedSubgraphs{1}.Edges.planted = zeros(numedges(plantedSubgraphs{1}), 1);
+assert(~isLabelOnlyOf(plantedSubgraphs, labelBMG, fullSubgraphs, fullBMG, keptVariables), ...
+    'An extra edge variable in a label-only subgraph is not detected.');
+plantedSubgraphs = labelSubgraphs;
+graphIndex = find(cellfun(@numedges, plantedSubgraphs) > 0, 1);
+[sourceNodes, targetNodes] = findedge(plantedSubgraphs{graphIndex});
+targetNodes(1) = 1 + mod(targetNodes(1), numnodes(plantedSubgraphs{graphIndex}));
+plantedSubgraphs{graphIndex} = feval(class(plantedSubgraphs{graphIndex}), sourceNodes, ...
+    targetNodes, [], numnodes(plantedSubgraphs{graphIndex}));
+assert(~isLabelOnlyOf(plantedSubgraphs, labelBMG, fullSubgraphs, fullBMG, keptVariables), ...
+    'A moved end node of a label-only subgraph is not detected.');
+clear labelOnlyInputs fullSubgraphs fullBMG labelSubgraphs labelBMG plantedSubgraphs
+
 % --- planted differences: the graph comparison above must report each (feature
 % 20261102-092909-reacting-moiety-memory) ---
 plantedSubgraphs = ciExpected.bondSubgraphs;
@@ -232,4 +324,36 @@ function isSame = isGraphEqual(A, B)
 % True when two graph/digraph objects have the same class and equal Nodes and Edges tables
 % (table equality: variable names, types, values and row order all have to match).
 isSame = strcmp(class(A), class(B)) && isequal(A.Nodes, B.Nodes) && isequal(A.Edges, B.Edges);
+end
+
+function isLabelOnly = isLabelOnlyOf(labelSubgraphs, labelBMG, fullSubgraphs, fullBMG, keptVariables)
+% True when labelSubgraphs and labelBMG are the label-only copies of fullSubgraphs and fullBMG
+% (contracts/new-optional-inputs.md of feature 20261102-092909-reacting-moiety-memory): the
+% same class, node count and end nodes in the same order; no node table; edge variables
+% EndNodes only for the bond subgraphs, and exactly keptVariables, equal column by column,
+% for the bond mapping graphs
+isLabelOnly = isequal(size(labelSubgraphs), size(fullSubgraphs)) && ...
+    isequal(size(labelBMG), size(fullBMG));
+for k = 1:numel(fullSubgraphs)
+    if ~isLabelOnly
+        return
+    end
+    labelGraph = labelSubgraphs{k};
+    fullGraph = fullSubgraphs{k};
+    isLabelOnly = strcmp(class(labelGraph), class(fullGraph)) && ...
+        numnodes(labelGraph) == numnodes(fullGraph) && width(labelGraph.Nodes) == 0 && ...
+        isequal(labelGraph.Edges.Properties.VariableNames, {'EndNodes'}) && ...
+        isequal(labelGraph.Edges.EndNodes, fullGraph.Edges.EndNodes);
+end
+for m = 1:numel(fullBMG)
+    if ~isLabelOnly
+        return
+    end
+    labelGraph = labelBMG{m};
+    fullGraph = fullBMG{m};
+    isLabelOnly = isa(labelGraph, 'digraph') && numnodes(labelGraph) == numnodes(fullGraph) && ...
+        width(labelGraph.Nodes) == 0 && ...
+        isequal(labelGraph.Edges.Properties.VariableNames, keptVariables) && ...
+        isequal(labelGraph.Edges, fullGraph.Edges(:, keptVariables));
+end
 end

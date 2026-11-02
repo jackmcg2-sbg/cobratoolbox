@@ -895,7 +895,11 @@ clear subgraphs
 %   - Each BMG{k} keeps the same node set as bondSubgraphs{k},
 %     but edges contain ONLY bond-instance edges (no atom transition edges).
 %   - BMG is therefore the bond-only view of each bond-mapping component.
-[bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG);
+% Without sanity checks, the subgraphs are needed only for isomorphism classification, so
+% they are extracted label-only (no node tables, only the edge variables the classification
+% reads): the same classes, at a fraction of the memory. The sanity check of
+% identifyIsomorphicClasses reads Nodes.AtomIndex, so it gets the full subgraphs.
+[bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, ~sanityChecks);
 % STEP B2 — Separate conserved vs reacting bond-mapping components
 % This function:
 %   - Identifies the largest isomorphic group of bond-mapping components.
