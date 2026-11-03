@@ -22,11 +22,18 @@ equalityCases="random-n100 random-n250 random-n500 random-n1000 random-n2000 bfs
 run_matlab() { # tag cap timeLimit command [env]
     local tag=$1 cap=$2 limit=$3 cmd=$4 extraEnv=${5:-} out=$work/runs/$1
     local needGiB=$(( ${cap%G} + 8 )) availableGiB
+    # wait (up to 3 h) until the cap plus 8 GB is available
+    local waited=0
     availableGiB=$(free -g | awk '/^Mem:/ {print $7}')
+    while (( availableGiB < needGiB && waited < 10800 )); do
+        sleep 60; waited=$(( waited + 60 ))
+        availableGiB=$(free -g | awk '/^Mem:/ {print $7}')
+    done
     if (( availableGiB < needGiB )); then
-        echo "$(date '+%F %T') not starting $tag: ${availableGiB} GB available, cap $cap needs ${needGiB} GB" | tee -a "$work/jobs.txt" >&2
+        echo "$(date '+%F %T') not starting $tag: ${availableGiB} GB available after 3 h, cap $cap needs ${needGiB} GB" | tee -a "$work/jobs.txt" >&2
         return 1
     fi
+    (( waited > 0 )) && echo "$(date '+%F %T') $tag waited ${waited} s for memory" >> "$work/jobs.txt"
     mkdir -p "$out"
     echo "$(date '+%F %T') start $tag cap=$cap" >> "$work/jobs.txt"
     systemd-run --user --scope -q --unit="cbcheck-$tag-$$" -p MemoryMax=$cap -p MemorySwapMax=0 \
@@ -62,6 +69,7 @@ case $mode in
     base)
         status=0
         for name in $equalityCases; do
+            [[ -f $work/runs/base-$name/out/outputs.mat ]] && continue
             identify "base-$name" "$(cap_for $name)" "$baseDir" "$name" true || status=1
         done
         exit $status ;;
@@ -72,6 +80,9 @@ case $mode in
         for name in $equalityCases; do
             if [[ ! -f $work/runs/base-$name/out/outputs.mat ]]; then
                 echo "eq-$name: no base outputs, left out"; continue
+            fi
+            if grep -qs '^RM ALL EQUAL 1' "$work/runs/eq-compare-$name/matlab.stdout"; then
+                echo "eq-compare-$name: RM ALL EQUAL 1 (earlier run)"; continue
             fi
             identify "new-$name" "$(cap_for $name)" "$newDir" "$name" true &&
                 compare "eq-compare-$name" "base-$name" "new-$name" || status=1
@@ -87,9 +98,13 @@ case $mode in
         for tag in mem-base-n1000-1 mem-new-n1000-1 mem-base-n1000-2 mem-new-n1000-2 mem-base-n2000 mem-new-n2000; do
             echo "$tag $(tr '\n' ' ' < "$work/runs/$tag/out/metrics.txt")"
         done ;;
-    full)
-        identify full 24G "$newDir" full true "$work/probe" &&
-            run_matlab full-compare 16G 2h "conservedBondGroupCheck('compareConserved', '$work/runs/conserved-full/out', '$work/runs/full/out')" &&
+    full|fullcompare)
+        # loading the full run's arm from its outputs.mat (23.7 GB) needs more than 16 GB
+        if [[ $mode == full ]]; then
+            identify full 24G "$newDir" full true "$work/probe" || exit 1
+        fi
+        rm -rf "$work/runs/full-compare"
+        run_matlab full-compare 28G 2h "conservedBondGroupCheck('compareConserved', '$work/runs/conserved-full/out', '$work/runs/full/out')" &&
             grep '^CB' "$work/runs/full-compare/matlab.stdout" ;;
     *)
         echo "unknown mode $mode" >&2; exit 2 ;;
