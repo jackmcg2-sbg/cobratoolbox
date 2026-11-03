@@ -1,4 +1,4 @@
-function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, labelOnly)
+function [bondSubgraphs, BMG, bmgEdgeIndex, subgraphSizes] = extractBondSubgraphs(BIG, ATG, labelOnly, subgraphsToBuild)
 % Extract subgraphs of bonds and their mappings from a bond instance graph
 %
 % USAGE:
@@ -6,6 +6,7 @@ function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, lab
 %    [bondSubgraphs, BMG] = extractBondSubgraphs(BIG, ATG)
 %    [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG)
 %    [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, labelOnly)
+%    [bondSubgraphs, BMG, bmgEdgeIndex, subgraphSizes] = extractBondSubgraphs(BIG, ATG, labelOnly, subgraphsToBuild)
 %
 % INPUTS:
 %    BIG:    bond instance graph, the full weighted bond graph containing all bonds and weights
@@ -22,6 +23,13 @@ function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, lab
 %                `BondIndex`, `EdgeIndex` and `mets` (same nodes and edge order). This
 %                holds far less memory per subgraph. It applies to the default peeling
 %                path; the fallback paths described below always return full subgraphs.
+%    subgraphsToBuild:  indices of the subgraphs (in extraction order) whose `bondSubgraphs`
+%                and `BMG` entries are built; every other entry is `[]`. Default (absent or
+%                empty): all are built, as without this input. `0` builds none (indices start
+%                at 1, so `0` names no subgraph and is otherwise ignored). `bmgEdgeIndex` and
+%                `subgraphSizes` are always complete, and a built entry is identical to the
+%                entry built when all are built. It applies to the default peeling path; the
+%                fallback paths build every entry.
 %
 % OUTPUTS:
 %    bondSubgraphs:    cell array where each entry represents a subgraph of connected bonds
@@ -31,6 +39,9 @@ function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, lab
 %    bmgEdgeIndex:     cell array, the same size as `BMG`; `bmgEdgeIndex{m}` holds the
 %                      `EdgeIndex` values of the edges of `BMG{m}` (the same set as
 %                      `BMG{m}.Edges.EdgeIndex`, in the order the edges were extracted)
+%    subgraphSizes:    `numel(BMG) x 2` matrix; row k is the node count and the edge count of
+%                      `bondSubgraphs{k}` as built when all are built, whether or not it is
+%                      built in this call
 %
 % NOTE:
 %    The bond instance graph is peeled component pair by component pair, then layer by
@@ -48,7 +59,8 @@ function [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, lab
 %
 % .. Author: - COBRA Toolbox, features 20260921-154310-reacting-moiety-optimisation,
 %              20260928-100409-extract-bond-subgraphs-local-peeling and
-%              20261102-092909-reacting-moiety-memory (labelOnly)
+%              20261102-092909-reacting-moiety-memory (labelOnly) and
+%              20261103-115636-conserved-bond-group-pruning (subgraphsToBuild, subgraphSizes)
 
 % Find connected components of underlying undirected graph.
 % Each component corresponds to an "atom conservation relation".
@@ -64,12 +76,30 @@ end
 if ~exist('labelOnly', 'var') || isempty(labelOnly)
     labelOnly = false;
 end
+% isRequested(k): whether the k-th subgraph is built (all of them by default)
+if ~exist('subgraphsToBuild', 'var') || isempty(subgraphsToBuild)
+    buildAll = true;
+    subgraphsToBuild = [];
+    isRequested = true(0, 1);
+else
+    if ~isnumeric(subgraphsToBuild) || any(subgraphsToBuild(:) < 0) || ...
+            any(subgraphsToBuild(:) ~= fix(subgraphsToBuild(:)))
+        error('extractBondSubgraphs:invalidSubgraphIndex', ...
+            'subgraphsToBuild must hold non-negative whole numbers.');
+    end
+    buildAll = false;
+    subgraphsToBuild = subgraphsToBuild(subgraphsToBuild > 0);
+    isRequested = false(max([0; subgraphsToBuild(:)]), 1);
+    isRequested(subgraphsToBuild) = true;
+end
 
 % A bond instance graph without edges yields no subgraphs
 if numedges(BIG) == 0
     bondSubgraphs = {};
     BMG = {};
     bmgEdgeIndex = {};
+    subgraphSizes = zeros(0, 2);
+    checkSubgraphIndices(subgraphsToBuild, 0);
     return
 end
 
@@ -92,6 +122,8 @@ end
 if ~lookupOK
     [bondSubgraphs, BMG] = extractBondSubgraphsByComponentScan(BIG, ATG, atoms2component);
     bmgEdgeIndex = cellfun(@(g) g.Edges.EdgeIndex, BMG, 'UniformOutput', false);
+    subgraphSizes = sizesOfSubgraphs(bondSubgraphs);
+    checkSubgraphIndices(subgraphsToBuild, numel(BMG));
     return
 end
 
@@ -106,6 +138,8 @@ nodesByComp = accumarray(atoms2component(:), (1:numel(atoms2component))', [nComp
 if ~isequal(componentATG(:), atoms2component(:))
     [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphsByEdgeScan(BIG, ATG, compOfAtom, ...
         nodesByComp, endNodes, edgeIdx);
+    subgraphSizes = sizesOfSubgraphs(bondSubgraphs);
+    checkSubgraphIndices(subgraphsToBuild, numel(BMG));
     return
 end
 
@@ -147,6 +181,8 @@ localPos = zeros(max(max(atomIndexATG), nBIGNodes), 1);
 bondSubgraphs = {};  % Contains subgraphs of connected bonds
 BMG = {};  % Bond Mapping Graphs: Isolated sets of bonds that are mapped to each other
 bmgEdgeIndex = {};  % EdgeIndex values of the edges of each Bond Mapping Graph
+subgraphSizes = zeros(0, 2);  % node and edge counts of each bond subgraph
+bondIndexAll = BIGEdges.BondIndex;
 
 % Initialize counter for the subgraph index
 subgraphIndex = 1;
@@ -177,6 +213,42 @@ while first <= nEdges
     else
         nodesInBothComponents = [nodesByComp{component1}; nodesByComp{component2}];
     end
+    % When none of this pair's subgraphs is requested, its layers, edge indices and sizes
+    % are computed from the edge indices alone, without building any table or graph
+    if ~buildAll
+        [pairRows, pairAtgEdgeCount] = pairEdgeRows(lowComp, highComp, bucketId, edgesByBucket, ...
+            atgBucketId, atgEdgesByBucket, remaining);
+        % local end nodes, as below (localPos is marked here, not in a helper, so that it is
+        % never copied)
+        pairAtoms = atomIndexATG(nodesInBothComponents);
+        if any(pairAtoms > nBIGNodes)
+            % the error the built path raises for these atoms, as below
+            subgraph(BIG, pairAtoms);
+        end
+        localPos(pairAtoms) = 1:numel(pairAtoms);
+        localEnds = reshape(localPos(endNodes(pairRows, :)), [], 2);
+        localPos(pairAtoms) = 0;
+        [layerRows, nLayers] = peelLayers(pairRows, localEnds, bondIndexAll);
+        pairSubgraphs = subgraphIndex:subgraphIndex + nLayers - 1;
+        pairSubgraphs = pairSubgraphs(pairSubgraphs <= numel(isRequested));
+        if ~any(isRequested(pairSubgraphs))
+            for layer = 1:nLayers
+                bondSubgraphs{subgraphIndex, 1} = []; %#ok<AGROW>
+                BMG{subgraphIndex, 1} = []; %#ok<AGROW>
+                bmgEdgeIndex{subgraphIndex, 1} = edgeIdx(layerRows{layer}); %#ok<AGROW>
+                subgraphSizes(subgraphIndex, :) = [numel(nodesInBothComponents), ...
+                    pairAtgEdgeCount + numel(layerRows{layer})]; %#ok<AGROW>
+                subgraphIndex = subgraphIndex + 1;
+            end
+            % Flag the peeled edges as processed and move to the next remaining edge
+            remaining(pairRows) = false;
+            while first <= nEdges && ~remaining(first)
+                first = first + 1;
+            end
+            continue
+        end
+    end
+
     % Create the subgraph containing nodes from both selected components, from the ATG
     % edges of the component pair only: numbered locally ([min max] for an undirected ATG)
     % and sorted by local end nodes with ties in ATG order, as subgraph(ATG, ...) orders them
@@ -245,6 +317,7 @@ while first <= nEdges
     combinedSubgraphs = {};
     BMgraph = {};  % Temporary storage for Bond Mapping Graphs
     BMedgeIdx = {};  % Temporary storage for their EdgeIndex values
+    layerSizes = zeros(0, 2);  % Temporary storage for the sizes of the combined subgraphs
 
     % Repeat until no edges of GBB are left
     while size(GEdges, 1) > 0
@@ -263,9 +336,17 @@ while first <= nEdges
             % Source and target nodes of those edges
             layerEndNodes = GEdges.EndNodes(firstOccurrenceIndices, :);
 
+            % Subgraphs not requested are not built (their entries stay empty)
+            buildThis = buildAll || (subgraphIndex + layer - 1 <= numel(isRequested) && ...
+                isRequested(subgraphIndex + layer - 1));
+            layerSizes(layer, :) = [numnodes(combinedSubgraph), ...
+                numedges(combinedSubgraph) + numel(firstOccurrenceIndices)]; %#ok<AGROW>
+
             % Create the Bond Mapping Graph for the current set of bonds
             EdgeTable = GEdges(firstOccurrenceIndices, :);
-            if labelOnly
+            if ~buildThis
+                BMgraph{layer, 1} = []; %#ok<AGROW>
+            elseif labelOnly
                 % digraph sorts the edge rows exactly as with the node table; the
                 % isolated nodes of the pair are then appended
                 bmGraph = digraph(EdgeTable);
@@ -279,8 +360,12 @@ while first <= nEdges
             BMedgeIdx{layer, 1} = layerEdgeIdx; %#ok<AGROW>
 
             % Add these edges to the combined subgraph
-            combinedSubgraphs{layer, 1} = addedge(combinedSubgraph, ...
-                layerEndNodes(:, 1), layerEndNodes(:, 2)); %#ok<AGROW>
+            if buildThis
+                combinedSubgraphs{layer, 1} = addedge(combinedSubgraph, ...
+                    layerEndNodes(:, 1), layerEndNodes(:, 2)); %#ok<AGROW>
+            else
+                combinedSubgraphs{layer, 1} = []; %#ok<AGROW>
+            end
 
             % Remove the processed edges (row order of the rest is kept, as rmedge does)
             GEdges(firstOccurrenceIndices, :) = [];
@@ -299,6 +384,7 @@ while first <= nEdges
         bondSubgraphs{subgraphIndex, 1} = combinedSubgraphs{m}; %#ok<AGROW>
         BMG{subgraphIndex, 1} = BMgraph{m}; %#ok<AGROW>
         bmgEdgeIndex{subgraphIndex, 1} = BMedgeIdx{m}; %#ok<AGROW>
+        subgraphSizes(subgraphIndex, :) = layerSizes(m, :); %#ok<AGROW>
         subgraphIndex = subgraphIndex + 1; % Increment subgraph index
     end
 
@@ -308,6 +394,7 @@ while first <= nEdges
         first = first + 1;
     end
 end
+checkSubgraphIndices(subgraphsToBuild, numel(BMG));
 
 end
 
@@ -606,4 +693,63 @@ while numedges(BIGCopy) > 0
     end
 end
 
+end
+
+function [pairRows, atgEdgeCount] = pairEdgeRows(lowComp, highComp, bucketId, edgesByBucket, ...
+    atgBucketId, atgEdgesByBucket, remaining)
+% Remaining bond instance rows of a component pair, collected as the peeling loop collects
+% them, and the number of ATG edges of the pair
+buckets = full([bucketId(lowComp, lowComp); bucketId(highComp, highComp); ...
+    bucketId(lowComp, highComp)]);
+buckets = unique(buckets(buckets > 0));
+pairRows = vertcat(zeros(0, 1), edgesByBucket{buckets});
+pairRows = pairRows(remaining(pairRows));
+atgBuckets = full([atgBucketId(lowComp, lowComp); atgBucketId(highComp, highComp); ...
+    atgBucketId(lowComp, highComp)]);
+atgBuckets = unique(atgBuckets(atgBuckets > 0));
+atgEdgeCount = sum(cellfun(@numel, atgEdgesByBucket(atgBuckets)));
+end
+
+function [layerRows, nLayers] = peelLayers(pairRows, localEnds, bondIndexAll)
+% The rows of each peeling layer of a component pair, as the peeling loop extracts them: the
+% rows are ordered by local (source, target), ties in BIG order, and layer L holds the L-th
+% occurrence of each BondIndex in that order, sorted by BondIndex (unique(..., 'first'))
+[~, order] = sortrows([localEnds pairRows]);
+rows = pairRows(order);
+if isempty(rows)
+    layerRows = cell(0, 1);
+    nLayers = 0;
+    return
+end
+[~, ~, groupOfRow] = unique(bondIndexAll(rows));
+% occurrence rank of every row within its BondIndex, in row order
+[~, byGroup] = sortrows([groupOfRow(:), (1:numel(rows))']);
+groupSorted = groupOfRow(byGroup);
+isGroupStart = [true; diff(groupSorted(:)) ~= 0];
+startPos = find(isGroupStart);
+rankSorted = (1:numel(rows))' - startPos(cumsum(isGroupStart)) + 1;
+nLayers = max(rankSorted);
+layerRows = cell(nLayers, 1);
+for layer = 1:nLayers
+    % within a layer every BondIndex occurs once, listed by ascending BondIndex
+    layerRows{layer} = rows(byGroup(rankSorted == layer));
+end
+end
+
+function sizes = sizesOfSubgraphs(bondSubgraphs)
+% Node and edge counts of built subgraphs
+if isempty(bondSubgraphs)
+    sizes = zeros(0, 2);
+else
+    sizes = [cellfun(@numnodes, bondSubgraphs(:)), cellfun(@numedges, bondSubgraphs(:))];
+end
+end
+
+function checkSubgraphIndices(subgraphsToBuild, numSubgraphs)
+% Every requested subgraph index must name an extracted subgraph
+if any(subgraphsToBuild > numSubgraphs)
+    error('extractBondSubgraphs:subgraphIndexOutOfRange', ...
+        'subgraphsToBuild names subgraph %d, but only %d were extracted.', ...
+        max(subgraphsToBuild), numSubgraphs);
+end
 end
