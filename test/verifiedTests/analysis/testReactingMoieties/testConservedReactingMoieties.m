@@ -23,6 +23,21 @@
 %       pre-existing identifyIsomorphicClasses sanity-check error, which is pinned as is).
 %       Planted differences in arm.MG, L and reacting.ReactMoietyGraphs must be detected by
 %       the comparison, so its passing is evidence.
+%     - Golden references recaptured (feature 20261102-151507-whole-molecule-bond-renumbering,
+%       FR-007): both references above store BG and dATM as inputs; since that feature they are
+%       built by the builder whose BG equals each metabolite's molblock, and their outputs were
+%       recaptured (per-field difference report in that feature's results file).
+%     - The paper's published example (Rahou et al., J. Theor. Biol. 621 (2026) 112348;
+%       feature 20261102-151507-whole-molecule-bond-renumbering, US3). The values below are
+%       taken from the paper, not from a first run of this code: on the shipped RXN files the
+%       conserved moiety matrix L of App. C.1.1, 6 moiety instances and 6 moiety transitions
+%       (Sec. 5.7.1), formulae H2O and C6H3O6, and a condensed reacting bond graph of 6
+%       vertices and 7 bonds (the authors' original code gives the same); on
+%       data/rxnFilesConsistentArms, which maps citrate's two symmetric arms consistently, the
+%       reacting moiety graph of Fig. 11 (4 vertices, 6 bonds, the bond sets of reactions
+%       Y1 = ACONTm, Y2 = r0426, Y3 = r0317, compared as atom-transition component pairs) and a
+%       2-reaction cover (every pair of reactions is minimal in Fig. 11, so which pair is not
+%       asserted).
 %
 %     Derived from tutorials/analysis/reactingMoieties/tutorial_conservedAndReactingMoieties.m
 %     (feature 004-reacting-moieties-test). Figures are generated but not displayed.
@@ -31,6 +46,7 @@
 %     - COBRA Toolbox, repurposed from the tutorial by Hadjar Rahou & Ronan M.T. Fleming.
 %     - COBRA Toolbox, feature 20260929-111453-conserved-moiety-table-hotspots (golden comparison)
 %     - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory (full-mode golden cases)
+%     - COBRA Toolbox, feature 20261102-151507-whole-molecule-bond-renumbering (paper values)
 %
 
 global CBTDIR
@@ -230,6 +246,59 @@ assert(numel(moietyFormulae) == 2);
 % the minimum set cover selects a minimal set of reactions covering reacting bonds
 assert(numel(reacting.selectedReactionNames) == 2);
 assert(all(ismember(reacting.selectedReactionNames, subModel.rxns)));
+
+% --- feature 20261102-151507: the paper's published values (Rahou et al. 2026) ---
+% conserved moieties on the shipped RXN files: L of App. C.1.1 over (h2o, cit, icit, cisa),
+% the 6 moiety instances and 6 moiety transitions of Sec. 5.7.1, and the moiety formulae.
+% Integer data, so exact comparisons.
+assert(isequal(subModel.mets, {'h2o[m]'; 'cit[m]'; 'icit[m]'; 'HC00342[m]'}), ...
+    'The example network''s metabolite order changed; the paper''s L is given over (h2o, cit, icit, cisa).');
+assert(isequal(full(arm.L), [1 1 1 0; 0 1 1 1]), 'arm.L differs from the paper''s L (App. C.1.1).');
+assert(numnodes(arm.MTG) == 6 && numedges(arm.MTG) == 6, ...
+    'The paper has 6 moiety instances and 6 moiety transitions (Sec. 5.7.1).');
+assert(isequal(moietyFormulae(:), {'H2O'; 'C6H3O6'}), 'The moiety formulae differ from H2O and C6H3O6.');
+% on the shipped files citrate's arms are mapped inconsistently between ACONTm and the two
+% dehydrations, so the condensed reacting bond graph has 6 vertices and 7 bonds (the paper's
+% section 4.1 rule and the authors' original code give the same), not Fig. 11
+assert(numnodes(reacting.Condensed_RBG) == 6 && numedges(reacting.Condensed_RBG) == 7, ...
+    sprintf('Shipped files: condensed reacting bond graph has %d vertices and %d bonds, expected 6 and 7.', ...
+    numnodes(reacting.Condensed_RBG), numedges(reacting.Condensed_RBG)));
+
+% Fig. 11 on the consistent-arm copy: the contracted vertices are the atom-transition
+% components of citrate's C3, C7, O2 and H8 (the paper's C3, C13, O2 and H15); the reacting
+% bonds a..f and the reactions' bond sets Y1 = {b,c,d,e}, Y2 = {a,d,e,f}, Y3 = {a,b,c,f}
+consistentDir = [fileDir filesep 'data' filesep 'rxnFilesConsistentArms'];
+[consistentATM, ~, ~, ~, ~, ~, consistentBG] = buildAtomAndBondTransitionMultigraph(subModel, ...
+    consistentDir, struct('directed', 0, 'sanityChecks', 1));
+[consistentArm, consistentFormulae, consistentReacting] = identifyConservedReactingMoieties( ...
+    subModel, consistentBG, consistentATM, struct('directed', 0, 'sanityChecks', 0));
+assert(isequal(full(consistentArm.L), full(arm.L)) && isequal(consistentFormulae, moietyFormulae), ...
+    'The consistent-arm mapping must not change the conserved moieties.');
+fig11Graph = consistentReacting.Condensed_RBG;
+assert(numnodes(fig11Graph) == 4 && numedges(fig11Graph) == 6, sprintf(['Fig. 11: the reacting ' ...
+    'moiety graph has 4 vertices and 6 bonds, got %d and %d.'], numnodes(fig11Graph), numedges(fig11Graph)));
+atgNodes = consistentArm.ATG.Nodes;
+componentOfCitrateAtom = @(atomNumber) full(atgNodes.Component(strcmp(atgNodes.mets, 'cit[m]') & ...
+    full(atgNodes.AtomNumber) == atomNumber));
+paperComponents = [componentOfCitrateAtom(3), componentOfCitrateAtom(7), componentOfCitrateAtom(2), ...
+    componentOfCitrateAtom(8)]; % paper C3, C13, O2, H15
+[sortedComponents, ~] = sort(paperComponents);
+[~, vertexOfPaperAtom] = ismember(paperComponents, sortedComponents); % condensed vertex ids
+C3 = vertexOfPaperAtom(1); C13 = vertexOfPaperAtom(2); O2 = vertexOfPaperAtom(3); H15 = vertexOfPaperAtom(4);
+paperBonds = struct('a', [C3 C13], 'b', [C3 O2], 'c', [C13 H15], 'd', [C3 H15], 'e', [C13 O2], 'f', [O2 H15]);
+paperReactions = {'ACONTm', 'bcde'; 'r0426', 'adef'; 'r0317', 'abcf'};
+fig11Edges = sort(fig11Graph.Edges.EndNodes, 2);
+for r = 1:size(paperReactions, 1)
+    reactionColumn = strcmp(subModel.rxns, paperReactions{r, 1});
+    reactionEdges = sortrows(fig11Edges(full(consistentReacting.CRB2R(:, reactionColumn)) ~= 0, :));
+    expectedEdges = sortrows(cell2mat(arrayfun(@(letter) sort(paperBonds.(letter)), ...
+        paperReactions{r, 2}', 'UniformOutput', false)));
+    assert(isequal(reactionEdges, expectedEdges), sprintf(['Fig. 11: the reacting bonds of %s ' ...
+        'are not {%s}.'], paperReactions{r, 1}, strjoin(cellstr(paperReactions{r, 2}'), ',')));
+end
+assert(numel(consistentReacting.selectedReactionNames) == 2, ...
+    'Fig. 11: a minimal cover of the reacting bonds has 2 reactions.');
+clear consistentATM consistentBG consistentArm consistentFormulae consistentReacting fig11Graph
 
 % --- feature 026-conserved-moieties-only-option: US2 equivalence with the existing
 % full computation (spec FR-003/FR-008/FR-009, SC-002/SC-003) ---

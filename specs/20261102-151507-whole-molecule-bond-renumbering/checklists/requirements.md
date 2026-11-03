@@ -1,0 +1,37 @@
+# Specification Quality Checklist: Whole-molecule bond renumbering
+
+**Purpose**: Validate specification completeness and quality before proceeding to planning
+**Created**: 2026-11-02
+**Feature**: [spec.md](../spec.md)
+
+## Content Quality
+
+- [x] No implementation details (languages, frameworks, APIs)
+  - Note: as in earlier features of this folder, the spec names the functions it changes. The requirement itself, that each metabolite's bonds equal its molfile, is stated independently of them.
+- [x] Focused on user value and business needs
+- [x] Written for non-technical stakeholders
+  - Note: within reason for a defect fix in a scientific library.
+- [x] All mandatory sections completed
+
+## Requirement Completeness
+
+- [x] No [NEEDS CLARIFICATION] markers remain
+  - Note: two review points are listed under Assumptions (isomorphism choice, downstream re-runs). Neither blocks planning.
+- [x] Requirements are testable and unambiguous
+- [x] Success criteria are measurable
+- [x] Success criteria are technology-agnostic (no implementation details)
+- [x] All acceptance scenarios are defined
+- [x] Edge cases are identified
+- [x] Scope is clearly bounded
+- [x] Dependencies and assumptions identified
+
+## Feature Readiness
+
+- [x] All functional requirements have clear acceptance criteria
+- [x] User scenarios cover primary flows
+- [x] Feature meets measurable outcomes defined in Success Criteria
+- [x] No implementation details leak into specification
+
+## Notes
+
+- Output values change on purpose (Principle II). The spec approves this, and requires a reviewed per-field difference report for every recaptured reference.
