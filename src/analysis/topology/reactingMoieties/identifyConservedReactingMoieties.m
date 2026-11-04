@@ -899,18 +899,34 @@ clear subgraphs
 % they are extracted label-only (no node tables, only the edge variables the classification
 % reads): the same classes, at a fraction of the memory. The sanity check of
 % identifyIsomorphicClasses reads Nodes.AtomIndex, so it gets the full subgraphs.
-[bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, ~sanityChecks);
 % STEP B2 — Separate conserved vs reacting bond-mapping components
-% This function:
-%   - Identifies the largest isomorphic group of bond-mapping components.
-%     Those components are treated as CONSERVED (structurally repeating) bond patterns.
-% Note: "largest isomorphic group" refers to the most frequent repeating bond-pattern component.
-%   - All remaining components are treated as REACTING (not part of that conserved pattern).
+%   - The largest isomorphic group of bond-mapping components is CONSERVED (the most
+%     frequent repeating bond pattern); all remaining components are REACTING.
 %
-% Only the two groupings are used here, so the four molecular graphs (CMTG, RMTG, CMG,
-% RMG) are not assembled, and bondSubgraphs is freed as soon as it has been classified.
-[~, ~, ~, ~, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex, false); %#ok<ASGLU>
-clear bondSubgraphs
+% Without sanity checks, only three things of the bond-mapping components are read below:
+% the edge indices of every component (bonds2component), the conserved group, and the BMG of
+% the conserved group (its mets-labelled classes). Each bond subgraph embeds the whole atom
+% components its bonds join, so building all of them grows much faster than the network (on
+% genome-scale networks, most of the memory and time of identification). So only the sizes
+% and edge indices of all components are extracted; findConservedBondGroup then builds and
+% classifies only the size groups that can hold the largest class, which gives exactly the
+% group findAndExtractMolecularGraphs would find (see its help); and only the conserved
+% group's BMG is built (feature 20261103-115636-conserved-bond-group-pruning).
+%
+% With sanity checks, the sanity check of identifyIsomorphicClasses reads the full subgraphs,
+% so every component is extracted and classified, and the four molecular graphs (CMTG, RMTG,
+% CMG, RMG) are not assembled, as only the two groupings are used.
+if sanityChecks
+    [bondSubgraphs, BMG, bmgEdgeIndex] = extractBondSubgraphs(BIG, ATG, false);
+    [~, ~, ~, ~, conservedGroups, reactingGroups] = findAndExtractMolecularGraphs(BIG, BMG, bondSubgraphs, bmgEdgeIndex, false); %#ok<ASGLU>
+    clear bondSubgraphs
+else
+    [~, ~, bmgEdgeIndex, subgraphSizes] = extractBondSubgraphs(BIG, ATG, true, 0);
+    buildBondSubgraphs = @(idx) selectBuiltSubgraphs(extractBondSubgraphs(BIG, ATG, true, idx), idx);
+    [conservedGroups, reactingGroups, bondGroupSearch] = findConservedBondGroup(subgraphSizes, buildBondSubgraphs); %#ok<ASGLU>
+    clear subgraphSizes buildBondSubgraphs
+    [~, BMG] = extractBondSubgraphs(BIG, ATG, true, conservedGroups);
+end
 CBSubgrahs=BMG(conservedGroups);
 % STEP B3 — Compute bond isomorphism classes (within conserved components only)
 % We identify isomorphic classes among the conserved bond components:
@@ -1852,3 +1868,9 @@ reacting.selectedReactionNames = model.rxns(selectedReactions);
 reacting.ReactMoietyMatrix = RM;
 reacting.ReactMoietySets = RM_sets;
 reacting.ReactMoietyGraphs = RM_graph;
+
+function subgraphs = selectBuiltSubgraphs(bondSubgraphs, idx)
+% The subgraphs idx of the first output of extractBondSubgraphs, as a column, as
+% findConservedBondGroup expects them
+% (no closing end: the functions of this file are not terminated by end)
+subgraphs = reshape(bondSubgraphs(idx), [], 1);

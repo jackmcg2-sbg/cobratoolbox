@@ -22,11 +22,17 @@
 %       are asserted directly, so a MATLAB release that changes them fails here.
 %     - Memory feature 20261102-092909-reacting-moiety-memory (spec FR-007): planted changes
 %       (a moved end node, an extra edge variable) must be detected by the graph comparison.
+%     - Feature 20261103-115636-conserved-bond-group-pruning (spec FR-001, US3 AS1, AS4):
+%       subgraphsToBuild and subgraphSizes on every reference input, with labelOnly false
+%       and true and six subsets each; the fallback paths build every entry; error inputs
+%       raise the same error; out-of-range and negative indices raise an error; planted
+%       changes (a moved end node, a wrong size row) must be detected.
 %
 % Authors:
 %     - COBRA Toolbox, feature 20260921-154310-reacting-moiety-optimisation
 %     - COBRA Toolbox, feature 20260928-100409-extract-bond-subgraphs-local-peeling
 %     - COBRA Toolbox, feature 20261102-092909-reacting-moiety-memory
+%     - COBRA Toolbox, feature 20261103-115636-conserved-bond-group-pruning
 
 % only base MATLAB graph functions are used: no solver or toolbox requirement
 prepareTest();
@@ -240,6 +246,91 @@ plantedSubgraphs{1}.Edges.planted = zeros(numedges(plantedSubgraphs{1}), 1);
 assert(~areGraphCellsEqual(plantedSubgraphs, ciExpected.bondSubgraphs), ...
     'An extra edge variable in a bond subgraph is not detected.');
 
+%% --- subgraphsToBuild and subgraphSizes (feature 20261103-115636-conserved-bond-group-pruning,
+% spec FR-001, US3 AS1, AS4; contract contracts/lazy-extraction-and-pruned-group.md): the
+% requested entries equal those of the eager extraction, the others are empty, and bmgEdgeIndex
+% and subgraphSizes are complete; the fallback paths build every entry ---
+lazyInputs = [{'CI fixture'}, {peeling.peelingCases.name}, {fallbackCases.name}; ...
+    {ciInputs.BIG}, {peeling.peelingCases.BIG}, {fallbackCases.BIG}; ...
+    {ciInputs.ATG}, {peeling.peelingCases.ATG}, {fallbackCases.ATG}]';
+lazyOutcomes = [{'ok'}; {peeling.peelingCases.outcome}'; {fallbackCases.outcome}'];
+if isfield(peeling, 'n332Inputs')
+    lazyInputs(end + 1, :) = {'332-reaction subset', peeling.n332Inputs.BIG, peeling.n332Inputs.ATG};
+    lazyOutcomes{end + 1} = 'ok';
+end
+lazyFallbackNames = [{'labelMismatch'}, {fallbackCases.name}];
+rng(20261103);
+for k = 1:size(lazyInputs, 1)
+    [caseName, caseBIG, caseATG] = lazyInputs{k, :};
+    if ~strcmp(lazyOutcomes{k}, 'ok')
+        % an input that raises an error raises the same error whatever is built
+        [~, expectedError] = runAndCatch(@() extractBondSubgraphs(caseBIG, caseATG));
+        [~, lazyError] = runAndCatch(@() extractBondSubgraphs(caseBIG, caseATG, true, 0));
+        assert(~isempty(expectedError) && ~isempty(lazyError) && ...
+            strcmp(lazyError.identifier, expectedError.identifier) && ...
+            strcmp(lazyError.message, expectedError.message), ...
+            sprintf('extractBondSubgraphs with subgraphsToBuild = 0 changes an error (%s).', caseName));
+        continue
+    end
+    isFallback = ismember(caseName, lazyFallbackNames);
+    for labelOnly = [false, true]
+        [eagerSubgraphs, eagerBMG, eagerEdgeIndex, eagerSizes] = extractBondSubgraphs(caseBIG, ...
+            caseATG, labelOnly);
+        nSubgraphs = numel(eagerBMG);
+        assert(isequal(eagerSizes, sizesOf(eagerSubgraphs)), ...
+            sprintf('extractBondSubgraphs subgraphSizes are not the subgraph sizes (%s).', caseName));
+        subsets = {0, 1, nSubgraphs, 1:nSubgraphs, sort(randperm(nSubgraphs, floor(nSubgraphs / 2))), ...
+            [nSubgraphs 1 1]};
+        if nSubgraphs == 0
+            subsets = {0, []};
+        end
+        for q = 1:numel(subsets)
+            subset = subsets{q}(subsets{q} >= 1 & subsets{q} <= nSubgraphs);
+            [lazySubgraphs, lazyBMG, lazyEdgeIndex, lazySizes] = extractBondSubgraphs(caseBIG, ...
+                caseATG, labelOnly, subsets{q});
+            built = false(nSubgraphs, 1);
+            built(subset) = true;
+            % an empty subset is the default: all are built
+            if isFallback || isempty(subsets{q})
+                built(:) = true;
+            end
+            assert(isLazyOf(lazySubgraphs, lazyBMG, lazyEdgeIndex, lazySizes, eagerSubgraphs, ...
+                eagerBMG, eagerEdgeIndex, eagerSizes, built), ...
+                sprintf(['extractBondSubgraphs with subgraphsToBuild = %s differs from the eager ' ...
+                'extraction (%s, labelOnly = %d).'], mat2str(subsets{q}), caseName, labelOnly));
+        end
+    end
+    % out-of-range and invalid indices raise an error naming them
+    [~, rangeError] = runAndCatch(@() extractBondSubgraphs(caseBIG, caseATG, true, nSubgraphs + 1));
+    assert(~isempty(rangeError) && strcmp(rangeError.identifier, ...
+        'extractBondSubgraphs:subgraphIndexOutOfRange'), ...
+        sprintf('extractBondSubgraphs accepts an out-of-range subgraph index (%s).', caseName));
+    [~, invalidError] = runAndCatch(@() extractBondSubgraphs(caseBIG, caseATG, true, -1));
+    assert(~isempty(invalidError) && strcmp(invalidError.identifier, ...
+        'extractBondSubgraphs:invalidSubgraphIndex'), ...
+        sprintf('extractBondSubgraphs accepts a negative subgraph index (%s).', caseName));
+end
+
+% planted differences: the lazy comparison must reject a moved end node and a wrong size row
+[eagerSubgraphs, eagerBMG, eagerEdgeIndex, eagerSizes] = extractBondSubgraphs(ciInputs.BIG, ...
+    ciInputs.ATG, true);
+built = true(numel(eagerBMG), 1);
+assert(isLazyOf(eagerSubgraphs, eagerBMG, eagerEdgeIndex, eagerSizes, eagerSubgraphs, eagerBMG, ...
+    eagerEdgeIndex, eagerSizes, built), 'The lazy comparison rejects identical outputs.');
+plantedSubgraphs = eagerSubgraphs;
+graphIndex = find(cellfun(@numedges, plantedSubgraphs) > 0, 1);
+[sourceNodes, targetNodes] = findedge(plantedSubgraphs{graphIndex});
+targetNodes(1) = 1 + mod(targetNodes(1), numnodes(plantedSubgraphs{graphIndex}));
+plantedSubgraphs{graphIndex} = feval(class(plantedSubgraphs{graphIndex}), sourceNodes, ...
+    targetNodes, [], numnodes(plantedSubgraphs{graphIndex}));
+assert(~isLazyOf(plantedSubgraphs, eagerBMG, eagerEdgeIndex, eagerSizes, eagerSubgraphs, ...
+    eagerBMG, eagerEdgeIndex, eagerSizes, built), 'A moved end node of a lazily built subgraph is not detected.');
+plantedSizes = eagerSizes;
+plantedSizes(1, 2) = plantedSizes(1, 2) + 1;
+assert(~isLazyOf(eagerSubgraphs, eagerBMG, eagerEdgeIndex, plantedSizes, eagerSubgraphs, ...
+    eagerBMG, eagerEdgeIndex, eagerSizes, built), 'A wrong subgraphSizes row is not detected.');
+clear lazyInputs eagerSubgraphs eagerBMG lazySubgraphs lazyBMG plantedSubgraphs
+
 % --- the subgraph/rmedge ordering rules the rewrite relies on ---
 checkSubgraphOrderingContract();
 
@@ -355,5 +446,45 @@ for m = 1:numel(fullBMG)
         width(labelGraph.Nodes) == 0 && ...
         isequal(labelGraph.Edges.Properties.VariableNames, keptVariables) && ...
         isequal(labelGraph.Edges, fullGraph.Edges(:, keptVariables));
+end
+end
+
+function [result, caught] = runAndCatch(fun)
+% Run fun, returning its first output, or the error it raised
+result = [];
+caught = [];
+try
+    result = fun();
+catch caught
+end
+end
+
+function sizes = sizesOf(bondSubgraphs)
+% Node and edge counts of every subgraph
+sizes = zeros(numel(bondSubgraphs), 2);
+for k = 1:numel(bondSubgraphs)
+    sizes(k, :) = [numnodes(bondSubgraphs{k}), numedges(bondSubgraphs{k})];
+end
+end
+
+function isLazy = isLazyOf(lazySubgraphs, lazyBMG, lazyEdgeIndex, lazySizes, eagerSubgraphs, ...
+    eagerBMG, eagerEdgeIndex, eagerSizes, built)
+% True when the lazy outputs hold the eager entries where built is true and [] elsewhere,
+% with the complete eager bmgEdgeIndex and subgraphSizes (contract of feature
+% 20261103-115636-conserved-bond-group-pruning)
+isLazy = isequal(size(lazySubgraphs), size(eagerSubgraphs)) && ...
+    isequal(size(lazyBMG), size(eagerBMG)) && isequal(lazyEdgeIndex, eagerEdgeIndex) && ...
+    isequal(lazySizes, eagerSizes);
+for k = 1:numel(eagerBMG)
+    if ~isLazy
+        return
+    end
+    if built(k)
+        isLazy = isGraphEqual(lazySubgraphs{k}, eagerSubgraphs{k}) && ...
+            isGraphEqual(lazyBMG{k}, eagerBMG{k});
+    else
+        isLazy = isempty(lazySubgraphs{k}) && isempty(lazyBMG{k}) && ...
+            isnumeric(lazySubgraphs{k}) && isnumeric(lazyBMG{k});
+    end
 end
 end
