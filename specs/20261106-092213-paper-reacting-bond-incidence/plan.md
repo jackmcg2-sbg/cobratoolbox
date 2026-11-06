@@ -58,7 +58,7 @@ A read-only design check (R1, R3) shows that the paper's rule reproduces Fig. 11
   - pass the builder's `dBTM` as the fifth input;
   - or set `options.reactingBondIncidence = 'endAtom'` for exact earlier results.
 
-  Argument positions, option names and existing errors are unchanged. Conserved-only calls are unaffected. **PASS** (with the documented exception; the maintainer confirms it at plan review)
+  Argument positions, option names and existing errors are unchanged. Conserved-only calls are unaffected. **PASS** (with the documented exception, confirmed by the maintainer at plan review, 2026-11-06)
 - **III. Testing**:
   - **III-Naming**: the tests go in `testConservedReactingMoieties.m`.
   - **Order**: the new assertions are written first and shown to fail on the unchanged source: the transport column and the shipped-fixture per-reaction sets (Design 4).

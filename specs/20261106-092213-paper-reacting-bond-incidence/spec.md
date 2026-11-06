@@ -46,6 +46,7 @@ $$\text{CRB2R}_{b,R} = 1 \iff b \in \mathcal{S}(R) \,\triangle\, \mathcal{P}(R)$
 
 - Q: When several reacting bonds are merged into one condensed edge, which reactions does its `CRB2R` row hold? → A: the union of the reactions that change any of the merged bonds (FR-003).
 - Q: Does the current end-atom rule stay available? → A: yes, as a non-default option (FR-006).
+- Q: The paper's rule as default is a breaking change under Principle II; is that approved? → A: yes, confirmed at plan review, with `'endAtom'` and passing `dBTM` as the migration path (Compatibility).
 
 ## Compatibility
 
