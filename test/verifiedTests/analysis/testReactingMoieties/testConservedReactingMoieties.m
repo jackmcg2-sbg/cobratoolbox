@@ -264,12 +264,32 @@ assert(numnodes(reacting.Condensed_RBG) == 6 && numedges(reacting.Condensed_RBG)
     sprintf('Shipped files: condensed reacting bond graph has %d vertices and %d bonds, expected 6 and 7.', ...
     numnodes(reacting.Condensed_RBG), numedges(reacting.Condensed_RBG)));
 
+% --- feature 20261106-092213-paper-reacting-bond-incidence: the paper's incidence ---
+% A condensed reacting bond belongs to exactly the reactions that break, form or change the
+% order of a reacting bond merged into it (Rahou et al. 2026, Sec. 6.1, eq. 32; spec FR-001,
+% FR-003). The expected sets come from dBTM's broken and formed bonding interactions, not
+% from CRB2R. On the shipped files the earlier end-atom rule marks ACONTm on edge 7 and r0317
+% on edge 6, which they do not change, and leaves r0426 off edges 6 and 7 (research R3).
+[expectedCRB2R, offGraphChanges] = expectedCondensedSets(subModel, dBTM, arm, reacting);
+assert(offGraphChanges == 0, sprintf(['Shipped files: %d broken or formed bonding ' ...
+    'interactions are on no condensed reacting bond.'], offGraphChanges));
+for r = 1:numel(subModel.rxns)
+    assert(isequal(full(reacting.CRB2R(:, r)) ~= 0, expectedCRB2R(:, r)), sprintf(['Shipped ' ...
+        'files: the condensed reacting bonds of %s are {%s}, but the bonds it breaks or forms ' ...
+        'are on {%s} (Rahou et al. 2026, Sec. 6.1).'], subModel.rxns{r}, ...
+        num2str(find(reacting.CRB2R(:, r))'), num2str(find(expectedCRB2R(:, r))')));
+end
+plantedCRB2R = full(reacting.CRB2R) ~= 0;
+plantedCRB2R(1, 1) = ~plantedCRB2R(1, 1);
+assert(~isequal(plantedCRB2R, expectedCRB2R), 'A flipped entry of CRB2R is not detected.');
+clear plantedCRB2R
+
 % Fig. 11 on the consistent-arm copy: the contracted vertices are the atom-transition
 % components of citrate's C3, C7, O2 and H8 (the paper's C3, C13, O2 and H15); the reacting
 % bonds a..f and the reactions' bond sets Y1 = {b,c,d,e}, Y2 = {a,d,e,f}, Y3 = {a,b,c,f}
 consistentDir = [fileDir filesep 'data' filesep 'rxnFilesConsistentArms'];
-[consistentATM, ~, ~, ~, ~, ~, consistentBG] = buildAtomAndBondTransitionMultigraph(subModel, ...
-    consistentDir, struct('directed', 0, 'sanityChecks', 1));
+[consistentATM, ~, ~, ~, ~, ~, consistentBG, consistentDBTM] = buildAtomAndBondTransitionMultigraph( ...
+    subModel, consistentDir, struct('directed', 0, 'sanityChecks', 1));
 [consistentArm, consistentFormulae, consistentReacting] = identifyConservedReactingMoieties( ...
     subModel, consistentBG, consistentATM, struct('directed', 0, 'sanityChecks', 0));
 assert(isequal(full(consistentArm.L), full(arm.L)) && isequal(consistentFormulae, moietyFormulae), ...
@@ -298,7 +318,60 @@ for r = 1:size(paperReactions, 1)
 end
 assert(numel(consistentReacting.selectedReactionNames) == 2, ...
     'Fig. 11: a minimal cover of the reacting bonds has 2 reactions.');
-clear consistentATM consistentBG consistentArm consistentFormulae consistentReacting fig11Graph
+
+% feature 20261106-092213 (spec US1 AS3): an order change counts as a change. r0317 forms,
+% and r0426 breaks, one interaction of cis-aconitate's C=C bond (paper bond a); the condensed
+% reacting bond that holds it belongs to exactly those two reactions.
+cisaDoubleBond = find(strcmp(consistentDBTM.Nodes.Bond, 'HC00342[m]#2#C#HC00342[m]#6#C'));
+assert(isscalar(cisaDoubleBond) && full(consistentDBTM.Nodes.BondType(cisaDoubleBond)) == 2, ...
+    'Cis-aconitate''s C2=C6 bond must be one double bond of the consistent-arm dBTM.');
+[changedBonds, changingRxns] = bondChanges(subModel, consistentDBTM);
+cisaChangingRxns = sort(changingRxns(changedBonds == cisaDoubleBond));
+assert(isequal(cisaChangingRxns, {'r0317'; 'r0426'}), sprintf(['The interactions of ' ...
+    'cis-aconitate''s C=C bond changed by each reaction: expected one by r0317 and one by ' ...
+    'r0426, got {%s}.'], strjoin(cisaChangingRxns, ', ')));
+cisaRow = condensedEdgeOfBond(cisaDoubleBond, consistentDBTM, consistentArm, consistentReacting);
+assert(cisaRow > 0, 'Cis-aconitate''s C=C bond is on no condensed reacting bond.');
+cisaRowRxns = sort(subModel.rxns(full(consistentReacting.CRB2R(cisaRow, :)) ~= 0));
+assert(isequal(cisaRowRxns, unique(cisaChangingRxns)), sprintf(['The condensed reacting ' ...
+    'bond holding cis-aconitate''s C=C bond belongs to {%s}, not to the reactions that change ' ...
+    'its order (r0317, r0426).'], strjoin(cisaRowRxns, ', ')));
+clear consistentATM consistentBG consistentDBTM consistentArm consistentFormulae ...
+    consistentReacting fig11Graph cisaDoubleBond changedBonds changingRxns cisaChangingRxns ...
+    cisaRow cisaRowRxns
+
+% --- feature 20261106-092213 (spec US1 AS1, FR-004): a reaction that moves bonds without
+% changing them. CITICITtm (cit[c] + icit[m] -> cit[m] + icit[c]) is added to the example,
+% with an identity atom map (data/rxnFilesTransport, research R6). It breaks and forms no
+% bond, so its CRB2R column is zero and it is never selected; under the earlier end-atom rule
+% it was marked on every condensed reacting bond with an end atom on citrate or isocitrate.
+transportModel = addReaction(subModel, 'CITICITtm', 'reactionFormula', ...
+    'cit[c] + icit[m] -> cit[m] + icit[c]', 'printLevel', 0);
+assert(isequal(transportModel.mets(1:4), subModel.mets) && ...
+    isequal(transportModel.rxns(1:3), subModel.rxns), ...
+    'Adding CITICITtm must keep the example''s metabolite and reaction order.');
+transportDir = [fileDir filesep 'data' filesep 'rxnFilesTransport'];
+[transportATM, ~, transportRxnBool, ~, ~, ~, transportBG, transportDBTM] = ...
+    buildAtomAndBondTransitionMultigraph(transportModel, transportDir, ...
+    struct('directed', 0, 'sanityChecks', 1));
+assert(all(transportRxnBool), 'The transport fixture must atom-map all four reactions.');
+[transportArm, ~, transportReacting] = identifyConservedReactingMoieties(transportModel, ...
+    transportBG, transportATM, struct('directed', 0, 'sanityChecks', 0));
+assert(numnodes(transportReacting.Condensed_RBG) == 4 && ...
+    numedges(transportReacting.Condensed_RBG) == 6, sprintf(['With CITICITtm: the condensed ' ...
+    'reacting bond graph has %d vertices and %d bonds, expected Fig. 11''s 4 and 6.'], ...
+    numnodes(transportReacting.Condensed_RBG), numedges(transportReacting.Condensed_RBG)));
+assert(isequal(full(transportArm.L(:, 1:4)), [1 1 1 0; 0 1 1 1]), ...
+    'With CITICITtm: L over (h2o, cit, icit, cisa) differs from the paper''s L (App. C.1.1).');
+transportColumn = strcmp(transportModel.rxns, 'CITICITtm');
+assert(nnz(transportReacting.CRB2R(:, transportColumn)) == 0, sprintf(['CITICITtm breaks and ' ...
+    'forms no bond, but CRB2R marks it on condensed reacting bonds {%s}.'], ...
+    num2str(find(transportReacting.CRB2R(:, transportColumn))')));
+assert(~ismember('CITICITtm', transportReacting.selectedReactionNames), ...
+    'CITICITtm changes no bond and must not be selected.');
+assertFig11Sets(transportModel, transportArm, transportReacting, 'With CITICITtm');
+clear transportModel transportDir transportATM transportRxnBool transportBG transportDBTM ...
+    transportArm transportReacting transportColumn
 
 % --- feature 026-conserved-moieties-only-option: US2 equivalence with the existing
 % full computation (spec FR-003/FR-008/FR-009, SC-002/SC-003) ---
@@ -634,5 +707,68 @@ if compareReacting
 else
     fprintf('%s: reacting not compared (MILP solver differs from the captured %s).\n', ...
         goldenCase.name, goldenCase.milpSolver);
+end
+end
+
+function [changedBonds, changingRxns] = bondChanges(model, dBTM)
+% The bonding interactions dBTM records as broken or formed, as (BondIndex, reaction) pairs,
+% one per interaction: a broken interaction is an edge whose TailMet is a reaction (the bond
+% is its HeadBondIndex), a formed one an edge whose HeadMet is a reaction (bond TailBondIndex)
+% (research R1)
+broken = ismember(dBTM.Edges.TailMet, model.rxns);
+formed = ismember(dBTM.Edges.HeadMet, model.rxns);
+changedBonds = full([dBTM.Edges.HeadBondIndex(broken); dBTM.Edges.TailBondIndex(formed)]);
+changingRxns = [dBTM.Edges.rxns(broken); dBTM.Edges.rxns(formed)];
+end
+
+function rows = condensedEdgeOfBond(bondIndex, dBTM, arm, reacting)
+% The condensed reacting bond whose atom-transition component pair is that of each bond, 0
+% where there is none. Every reacting bond merged into a condensed edge has that edge's
+% component pair, so this finds the edge without CRB2R (the union rule of spec FR-003).
+atomIndex = full(arm.ATG.Nodes.AtomIndex);
+component = full(arm.ATG.Nodes.Component);
+bondPair = @(b) sort(reshape(component(arrayfun(@(a) find(atomIndex == a), ...
+    full([dBTM.Nodes.BondHeadAtomIndex(b(:)), dBTM.Nodes.BondTailAtomIndex(b(:))]))), [], 2), 2);
+edgePairs = bondPair(reacting.Condensed_RBG.Edges.BondIndex);
+assert(size(unique(edgePairs, 'rows'), 1) == size(edgePairs, 1), ...
+    'Two condensed reacting bonds have the same atom-transition component pair.');
+[~, rows] = ismember(bondPair(bondIndex), edgePairs, 'rows');
+end
+
+function [expectedCRB2R, offGraphChanges] = expectedCondensedSets(model, dBTM, arm, reacting)
+% Each reaction's condensed reacting bonds by the paper's rule (Rahou et al. 2026, Sec. 6.1,
+% eq. 32), computed without CRB2R: the bonds dBTM records as broken or formed by the
+% reaction, on the condensed edge with their component pair. offGraphChanges counts the
+% interactions on no condensed edge.
+[changedBonds, changingRxns] = bondChanges(model, dBTM);
+rows = condensedEdgeOfBond(changedBonds, dBTM, arm, reacting);
+[~, columns] = ismember(changingRxns, model.rxns);
+onGraph = rows > 0;
+expectedCRB2R = full(sparse(rows(onGraph), columns(onGraph), 1, ...
+    numedges(reacting.Condensed_RBG), numel(model.rxns))) ~= 0;
+offGraphChanges = nnz(~onGraph);
+end
+
+function assertFig11Sets(model, arm, reacting, label)
+% The bond sets of Fig. 11 (Rahou et al. 2026) for ACONTm, r0426 and r0317, compared as
+% atom-transition component pairs of citrate's C3, C7, O2 and H8 (the paper's C3, C13, O2
+% and H15), as in the consistent-arm check above
+atgNodes = arm.ATG.Nodes;
+componentOfCitrateAtom = @(atomNumber) full(atgNodes.Component(strcmp(atgNodes.mets, 'cit[m]') & ...
+    full(atgNodes.AtomNumber) == atomNumber));
+paperComponents = [componentOfCitrateAtom(3), componentOfCitrateAtom(7), componentOfCitrateAtom(2), ...
+    componentOfCitrateAtom(8)];
+[~, vertexOfPaperAtom] = ismember(paperComponents, sort(paperComponents));
+C3 = vertexOfPaperAtom(1); C13 = vertexOfPaperAtom(2); O2 = vertexOfPaperAtom(3); H15 = vertexOfPaperAtom(4);
+paperBonds = struct('a', [C3 C13], 'b', [C3 O2], 'c', [C13 H15], 'd', [C3 H15], 'e', [C13 O2], 'f', [O2 H15]);
+paperReactions = {'ACONTm', 'bcde'; 'r0426', 'adef'; 'r0317', 'abcf'};
+graphEdges = sort(reacting.Condensed_RBG.Edges.EndNodes, 2);
+for r = 1:size(paperReactions, 1)
+    reactionColumn = strcmp(model.rxns, paperReactions{r, 1});
+    reactionEdges = sortrows(graphEdges(full(reacting.CRB2R(:, reactionColumn)) ~= 0, :));
+    expectedEdges = sortrows(cell2mat(arrayfun(@(letter) sort(paperBonds.(letter)), ...
+        paperReactions{r, 2}', 'UniformOutput', false)));
+    assert(isequal(reactionEdges, expectedEdges), sprintf(['%s: the reacting bonds of %s ' ...
+        'are not {%s} (Fig. 11).'], label, paperReactions{r, 1}, strjoin(cellstr(paperReactions{r, 2}'), ',')));
 end
 end
