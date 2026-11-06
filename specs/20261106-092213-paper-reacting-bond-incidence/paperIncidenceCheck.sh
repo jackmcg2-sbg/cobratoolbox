@@ -19,6 +19,8 @@ feature=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$feature/../.." && pwd)
 work=${WORK:?set WORK to a folder outside the repository}
 newDir=$repo/src/analysis/topology/reactingMoieties
+baselineReacting=$baseline/moieties_Qconserved_graphsOn_reacting/reacting.mat
+baselineConserved=$baseline/moieties_Qconserved_graphsOn_reacting/conserved_moieties.mat
 setup="cd('$HOME/cobratoolbox'); initCobraToolbox(false); changeCobraSolver('gurobi', 'MILP', 0); addpath('$newDir'); addpath('$feature'); cd('$work'); assert(startsWith(which('identifyConservedReactingMoieties'), '$newDir'));"
 
 run_matlab() { # tag cap timeLimit command
@@ -54,6 +56,21 @@ case $mode in
         [[ -f $work/checkpoint_build.mat ]] || cp "$baseline/checkpoint_build.mat" "$work/checkpoint_build.mat" || exit 1
         run_matlab rebuild 24G 4h "rebuildWithBondTransitions('$work/checkpoint_build.mat', '$rxnDir', '$work/vmh_with_dBTM.mat')" &&
             grep '^REBUILD' "$work/runs/rebuild/matlab.stdout" ;;
+    endAtom)
+        # T023: equality control against the baseline run, which used the end-atom rule
+        grep -q '^REBUILD EQUAL 1' "$work/runs/rebuild/matlab.stdout" || { echo "no equal rebuild in $work" >&2; exit 1; }
+        run_matlab identify-endAtom 24G 4h "paperIncidenceCheck('identify', '$work/vmh_with_dBTM.mat', 'endAtom', '$work/runs/identify-endAtom/out')" || exit 1
+        run_matlab compare-endAtom 16G 1h "paperIncidenceCheck('compare', '$baselineReacting', '$baselineConserved', '$work/runs/identify-endAtom/out')" || exit 1
+        grep '^PI' "$work/runs/compare-endAtom/matlab.stdout"
+        grep -q '^PI ALL EQUAL 1' "$work/runs/compare-endAtom/matlab.stdout" ;;
+    bondChange)
+        # T024: the paper's rule, then the report
+        grep -q '^PI ALL EQUAL 1' "$work/runs/compare-endAtom/matlab.stdout" || { echo "the equality control has not passed" >&2; exit 1; }
+        run_matlab identify-bondChange 24G 4h "paperIncidenceCheck('identify', '$work/vmh_with_dBTM.mat', 'bondChange', '$work/runs/identify-bondChange/out')" || exit 1
+        grep '^PI' "$work/runs/identify-bondChange/matlab.stdout" ;;
+    report)
+        run_matlab report 16G 1h "paperIncidenceCheck('report', '$baselineReacting', '$work/runs/identify-endAtom/out', '$work/runs/identify-bondChange/out', '$feature/paperIncidenceResults.md')" &&
+            grep '^PI' "$work/runs/report/matlab.stdout" ;;
     *)
         echo "unknown mode $mode" >&2; exit 2 ;;
 esac

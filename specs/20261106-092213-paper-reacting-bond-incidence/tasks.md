@@ -141,7 +141,7 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 6: Full collapsed VMH network (US3)
 
-- [ ] T022 [US3] Create `FEATURE/paperIncidenceCheck.m` and `FEATURE/paperIncidenceCheck.sh`, modelled on feature `20261103-115636`'s `conservedBondGroupCheck`. Actions:
+- [X] T022 [US3] Create `FEATURE/paperIncidenceCheck.m` and `FEATURE/paperIncidenceCheck.sh`, modelled on feature `20261103-115636`'s `conservedBondGroupCheck`. Actions:
   - **`identify`**: full mode from `WORK/vmh_with_dBTM.mat`, with the rule as an argument, saving `arm`, `moietyFormulae` and `reacting`, and recording the identification time and VmHWM;
   - **`compare`**: every `reacting` field, and the conserved fields;
   - **`report`**: the US3 metrics into `FEATURE/paperIncidenceResults.md`.
