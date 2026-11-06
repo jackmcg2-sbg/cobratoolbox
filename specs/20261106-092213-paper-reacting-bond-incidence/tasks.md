@@ -163,7 +163,7 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 7: Polish and close-out
 
-- [ ] T025 [P] Static review:
+- [X] T025 [P] Static review:
   - `git diff BASE -- src` touches only `RM/identifyConservedReactingMoieties.m`;
   - the `'endAtom'` lines of STEP 3 are byte-identical to `BASE`'s;
   - no `nargin`, `evalc` or warning suppression;

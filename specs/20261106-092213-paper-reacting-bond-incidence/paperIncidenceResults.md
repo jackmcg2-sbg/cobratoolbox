@@ -83,3 +83,23 @@ this feature does not touch fail: `testBuildAtomAndBondTransitionMultigraph` (`t
 `test_j`) and `testFindConservedBondGroup` (`plantedDifference`). They fail because
 `runtests` does not carry a variable from one `%%` section into the next (`molfileOptions`,
 `syntheticCases`). Those files and the functions they test are identical to `ad0d11d60`.
+
+## Static review and quickstart (T025, T026)
+
+- **Scope of the change**: `git diff ad0d11d60 -- src` touches only
+  `identifyConservedReactingMoieties.m`.
+- **`'endAtom'` lines**: STEP 3's earlier code is unchanged apart from indentation. It now sits
+  in the `else` branch, and `git diff -w` removes none of its lines.
+- **Forbidden constructs**: none of `nargin`, `evalc` or warning suppression appears in the
+  added lines.
+- **Identifiers**: every new error and warning has one. Besides the contract's two errors
+  there is a third, `identifyConservedReactingMoieties:bondOnTwoCondensedEdges`. It is T011's
+  check that each bond maps to at most one condensed edge, and it cannot fire while condensed
+  edges are keyed by their component pair.
+- **Scenarios 1–3**: covered by the T021 runs.
+- **Tutorial-derived test**: `test/tutorialDerived/.../tutorial_conservedAndReactingMoieties.m`
+  looks for a `data/rxnFiles` folder beside itself, which neither this repository nor
+  `~/cobratoolbox` has. It therefore stops before its identification call, at `ad0d11d60` as
+  now, and `runTestSuite` does not run it (it runs only `verifiedTests`). A scratch copy with
+  `data/rxnFiles` linked to the test's shipped fixture passes under `runScriptFile`, including
+  the changed call that passes `dBTM`.
