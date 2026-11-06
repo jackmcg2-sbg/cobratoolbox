@@ -31,7 +31,9 @@ $$\text{CRB2R}_{b,R} = 1 \iff b \in \mathcal{S}(R) \,\triangle\, \mathcal{P}(R)$
 - On the full collapsed VMH network (reconXmoieties E36), one condensed reacting bond is marked by up to 5,195 of 9,634 reactions.
 - The set cover still covers every bond, but a selected reaction can "cover" a bond it leaves intact. So the reacting moieties do not mean what the paper means.
 
-**Why the existing tests don't catch it.** On the paper's example the two rules give the same `CRB2R` (C10, E31): every reaction there that moves a reacting bond's atoms also changes that bond. The Fig. 11 test passes either way.
+**Why the existing tests don't catch it.**
+- **Consistent-arm copy**: the two rules give the same `CRB2R` (C10). Every reaction there that moves a reacting bond's atoms also changes that bond, so the Fig. 11 test passes either way.
+- **Shipped RXN files**: the rules differ (plan research R3). Today's rule marks `ACONTm` and `r0317` each against one condensed bond they don't change. The test there asserts only the graph's size (6 vertices, 7 bonds), not each reaction's bonds.
 
 **The data the paper's rule needs already exists.** When the builder reads each RXN file (`addBondMappingsRXNFile`), it labels every bond of that reaction as broken (−1), formed (+1) or conserved (0).
 - A double bond is split into two bonding interactions, so a change of order is one broken or formed interaction, as §4.1 says.
@@ -44,6 +46,16 @@ $$\text{CRB2R}_{b,R} = 1 \iff b \in \mathcal{S}(R) \,\triangle\, \mathcal{P}(R)$
 
 - Q: When several reacting bonds are merged into one condensed edge, which reactions does its `CRB2R` row hold? → A: the union of the reactions that change any of the merged bonds (FR-003).
 - Q: Does the current end-atom rule stay available? → A: yes, as a non-default option (FR-006).
+
+## Compatibility
+
+**Approved breaking change** (Principle II), maintainer, 2026-11-06 (Clarifications, FR-006): the default `CRB2R` rule changes to the paper's. A full-mode call that doesn't pass the bond changes now stops with an error, where it used to return end-atom results.
+
+**Migration path**:
+- pass the builder's bond transition multigraph (`dBTM`, its eighth output) to get the paper's rule;
+- or set `options.reactingBondIncidence = 'endAtom'` to get exactly the earlier results.
+
+Argument positions, option names and existing errors are unchanged. Conserved-only calls are unaffected.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -123,7 +135,7 @@ A maintainer wants to see what the change does at genome scale before reacting-m
 - **FR-002**: `identifyConservedReactingMoieties` must receive these per-reaction bond changes. The existing calls `(model, BG, dATM, options)` must keep working for conserved-moiety-only runs (`options.conservedMoietiesOnly = true`), which don't use `CRB2R`. In full mode without the bond changes, the function must stop with an error naming the missing input (VII-C), not fall back silently. The exception is `options.reactingBondIncidence = 'endAtom'` (FR-006).
 - **FR-003**: When several atom-level reacting bonds fall on the same pair of atom-transition components, they are merged into one condensed edge, as today. Its row of `CRB2R` must be the union of the reactions that change any of the merged bonds. The paper doesn't say how to label a merged edge (its condensation matrix $Z$, eq. 31, is not defined); the union loses no bond change. The current code keeps only the first merged bond's `BondIndex` and its two atoms; that choice is not kept.
 - **FR-004**: A new test fixture adds, to a copy of the paper's example, one reaction that moves a reacting bond's metabolite without changing any of its bonds (US1 AS1). The test is added to `testConservedReactingMoieties.m` (III-Naming), and it is written and shown to fail on the unchanged source before the change. A second assertion checks a bond-order change (US1 AS3) on an existing fixture reaction, or on a small added one if none exists.
-- **FR-005**: The `reacting` output must record which condensed reacting bonds no reaction changes (an index or logical vector), so a run can report them. These rows are left out of the cover's constraints.
+- **FR-005**: The `reacting` output must record which condensed reacting bonds no reaction changes (an index or logical vector), so a run can report them. These rows are left out of the cover's constraints. It must also count the broken or formed bonds that land on no condensed reacting bond, with a visible warning when there are any (VII-B). That count is the check that the reacting-bond label and the per-reaction bond changes agree.
 - **FR-006**: The current end-atom rule must stay available as a non-default option, so earlier results can be reproduced: `options.reactingBondIncidence`, either `'bondChange'` (default, FR-001) or `'endAtom'` (today's rule, unchanged, including its use of the first merged bond only). With `'endAtom'` the per-reaction bond changes are not needed, and the reacting outputs must equal today's golden references (`isequaln`), so FR-008 keeps those beside the recaptured ones. An unknown value raises an error naming the option.
 - **FR-007**: Conserved-moiety outputs (`arm.L`, `arm.M2M`, `arm.M2R`, `moietyFormulae`, `arm.ATG`, `arm.MTG`, `arm.MG`) must be identical (`isequaln`) before and after on every fixture. Only `reacting` fields may change: `CRB2R`, the cover, `ReactMoietyMatrix`, `ReactMoietySets`, `ReactMoietyGraphs`, and the new field of FR-005. `Condensed_RBG` changes only if FR-003 chooses not to merge.
 - **FR-008**: Golden references whose `reacting` fields change are recaptured by a capture script in this feature's directory, with a per-field old-against-new difference report that is part of the review: `conservedReactingMoietiesReference.mat` (6 cases) and `reactingMoietyMemoryReference.mat` (10 cases). Their stored `BG` and `dATM` inputs are not rebuilt; the per-reaction bond changes are added to them from the same builder run. Today's references are kept, under new names, for the `'endAtom'` test (FR-006).
