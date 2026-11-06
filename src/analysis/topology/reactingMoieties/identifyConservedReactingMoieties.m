@@ -1,4 +1,4 @@
-function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(model, BG, dATM, options)
+function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(model, BG, dATM, options, dBTM)
 %
 % This function computes:
 %   (1) Conserved moieties (structural moiety conservation relations) from an
@@ -23,7 +23,7 @@ function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(mod
 % moiety instances in the corresponding metabolite.
 %
 % USAGE:
-%   [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(model, BG, dATM, options)
+%   [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(model, BG, dATM, options, dBTM)
 %
 %
 % INPUTS:
@@ -87,6 +87,26 @@ function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(mod
 %                Setting it to false without `conservedMoietiesOnly = true`
 %                is an error, because reacting-moiety analysis needs the
 %                bond-level structures.
+%                * .reactingBondIncidence {('bondChange'), 'endAtom'} the rule
+%                that assigns condensed reacting bonds to reactions in
+%                `reacting.CRB2R`. 'bondChange' (default): a condensed reacting
+%                bond belongs to exactly the reactions that break, form or
+%                change the order of a reacting bond merged into it (Rahou et
+%                al. 2026, Sec. 6.1, eq. 32); this needs `dBTM`. 'endAtom': the
+%                rule used before feature 20261106-092213, where a condensed
+%                reacting bond belongs to every reaction with an atom
+%                transition at either end atom of the first reacting bond
+%                merged into it; `dBTM` is not needed. Matched case-sensitively.
+%                The default changed in that feature (an approved breaking
+%                change): to keep the earlier results, set 'endAtom'.
+%    dBTM:       Directed bond transition multigraph, the eighth output of
+%                buildAtomAndBondTransitionMultigraph, built from the same model
+%                and RXN files as `BG` and `dATM`. Required in full mode with
+%                `reactingBondIncidence = 'bondChange'`, otherwise ignored. A
+%                broken bonding interaction is an edge whose `.Edges.TailMet` is
+%                a reaction of `model.rxns` (the bond is `.Edges.HeadBondIndex`),
+%                a formed one an edge whose `.Edges.HeadMet` is a reaction (the
+%                bond is `.Edges.TailBondIndex`); the reaction is `.Edges.rxns`.
 %
 % OUTPUTS:
 %    arm:               atomically resolved model as a matlab structure (fields detailed below)
@@ -187,6 +207,15 @@ function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(mod
 %   reacting : struct containing reacting-moiety results derived from BG and dATM
 %              (condensed reacting bond graph, bond->reaction incidence, selected
 %               reactions from set cover, and reacting-moiety sets/graphs).
+%   reacting.CRB2R:  `nCRB x n` sparse 0/1 matrix, condensed reacting bonds (rows, in
+%                    `reacting.Condensed_RBG` edge order) by reactions (columns, in
+%                    `model.rxns` order), by the rule of `options.reactingBondIncidence`
+%   reacting.unchangedReactingBonds:  `nCRB x 1` logical, true where a row of CRB2R is
+%                    empty; these rows are left out of the set cover
+%   reacting.offGraphBondChanges:  number of broken or formed bonding interactions in
+%                    `dBTM` whose bond is on no condensed reacting bond (0 under
+%                    'endAtom'); when it is not zero, warning
+%                    identifyConservedReactingMoieties:offGraphBondChanges gives it
 %
 % NOTE:
 %    If the minimum set-cover MILP (STEP 4) legitimately selects zero reactions,
@@ -210,12 +239,16 @@ function [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(mod
 %               per-moiety subgraphs built from their own rows
 %               (extractPartitionSubgraphs), moiety-index propagation without
 %               whole-graph scans; outputs unchanged.
+%             - COBRA Toolbox, feature 20261106-092213-paper-reacting-bond-incidence:
+%               reacting-bond incidence from the bond changes of `dBTM`, as in
+%               Rahou et al. 2026, Sec. 6.1 (options.reactingBondIncidence, new
+%               default 'bondChange'; the earlier rule kept as 'endAtom').
 %
 % Ghaderi, S., Haraldsdóttir, H.S., Ahookhosh, M., Arreckx, S., and Fleming, R.M.T. (2020).
 % Structural conserved moiety splitting of a stoichiometric matrix. Journal of Theoretical Biology 499, 110276.
 % Rahou, H., Fleming, R.M.T., et al. (2025).
 % Characterisation of conserved and reacting moieties in chemical reactions.
-% Journal of Theoretical Biology. https://doi.org/10.1016/j.jtbi.2025.112348
+% Journal of Theoretical Biology 621, 112348 (2026). https://doi.org/10.1016/j.jtbi.2025.112348
 
 if ~exist('options','var')
     options=[];
@@ -258,6 +291,28 @@ if ~computeMoietyGraphs && ~conservedMoietiesOnly
     error('identifyConservedReactingMoieties:computeMoietyGraphsRequiresConservedOnly', ...
         ['options.computeMoietyGraphs = false requires options.conservedMoietiesOnly = true, ' ...
         'because reacting-moiety analysis needs the bond-level structures.']);
+end
+
+if ~isfield(options,'reactingBondIncidence')
+    % Default 'bondChange': the paper's rule (Rahou et al. 2026, Sec. 6.1, eq. 32),
+    % which reads the bond changes from dBTM. 'endAtom' keeps the earlier rule. See
+    % OPTIONAL INPUTS above.
+    options.reactingBondIncidence = 'bondChange';
+end
+reactingBondIncidence = options.reactingBondIncidence;
+if ~(ischar(reactingBondIncidence) || (isstring(reactingBondIncidence) && isscalar(reactingBondIncidence))) ...
+        || ~any(strcmp(reactingBondIncidence, {'bondChange', 'endAtom'}))
+    error('identifyConservedReactingMoieties:invalidReactingBondIncidence', ...
+        'options.reactingBondIncidence must be ''bondChange'' or ''endAtom''.');
+end
+reactingBondIncidence = char(reactingBondIncidence);
+if ~conservedMoietiesOnly && strcmp(reactingBondIncidence, 'bondChange') && ...
+        (~exist('dBTM', 'var') || isempty(dBTM))
+    error('identifyConservedReactingMoieties:missingBondTransitions', ...
+        ['The reacting-bond incidence options.reactingBondIncidence = ''bondChange'' (the ' ...
+        'default) needs the bond transition multigraph: pass dBTM, the eighth output of ' ...
+        'buildAtomAndBondTransitionMultigraph, as the fifth input, or set ' ...
+        'options.reactingBondIncidence = ''endAtom'' for the earlier end-atom rule.']);
 end
 
 bool = contains(model.mets,'#');
@@ -1578,6 +1633,8 @@ end
 %
 % Definitions:
 %   - Reacting bond: bond edge with IsomorphismClass == 0 (i.e., not part of conserved bond patterns).
+%     Which bonds are reacting is decided by this label under both incidence rules; the rule
+%     only decides which reactions each condensed reacting bond belongs to.
 %   - RBG: reacting bond graph on atom nodes (subset of ABG).
 %   - Condensed reacting bond graph: same reacting bonds but with atom nodes collapsed
 %     to their ATG connected-component IDs (ATG.Nodes.Component). This groups bonds
@@ -1588,8 +1645,11 @@ end
 %   R2) Re-index EndNodes so that edge endpoints match the subset node table used for RBG.
 %   R3) Condense RBG by collapsing atoms to their ATG connected-component IDs, producing COndensed_RBG.
 %   R4) Remove duplicate condensed edges (Condensed_RBG) to avoid repeated bonds between same components.
-%   R5) Build CRB2R: a binary matrix mapping each condensed reacting bond to reactions whose
-%       atom transitions touch either endpoint atom of the original bond.
+%   R5) Build CRB2R: a binary matrix mapping each condensed reacting bond to reactions, by
+%       options.reactingBondIncidence. 'bondChange' (default): the reactions that break, form
+%       or change the order of a reacting bond merged into it, read from dBTM (Rahou et al.
+%       2026, Sec. 6.1, eq. 32). 'endAtom': the reactions whose atom transitions touch either
+%       endpoint atom of the first reacting bond merged into it.
 %   R6) Solve minimum set cover (via intlinprog): choose the smallest set of reactions that covers
 %       all reacting bonds (rows of CRB2R).
 %   R7) Build outputs: reacting bond sets / subgraphs per selected reaction and store in arm.
@@ -1685,8 +1745,11 @@ cEdges = COndensed_RBG.Edges;
 E = cEdges.EndNodes;
 E_sorted = sort(E, 2);
 
-% Find unique edges (keep first occurrence)
-[uniqueEdges, ia, ~] = unique(E_sorted, 'rows', 'stable');
+% Find unique edges (keep first occurrence). rbgEdgeToCondensed maps every reacting bond
+% edge (row of cEdges) to its condensed edge: under 'bondChange' a condensed edge holds the
+% reactions that change any of the reacting bonds merged into it (spec FR-003).
+[uniqueEdges, ia, rbgEdgeToCondensed] = unique(E_sorted, 'rows', 'stable');
+rbgBondIndex = full(cEdges.BondIndex);
 
 % Keep corresponding edge rows (including BondIndex)
 simpleEdges = cEdges(ia, :);
@@ -1728,56 +1791,92 @@ bondIdx = cEdges.BondIndex;
 nCRB = length(bondIdx);
 nRxns = length(model.rxns);
 
-CRB2R = sparse(nCRB, nRxns);
-
-% Atom transition data
-headATM = dATM.Edges.HeadAtomIndex;
-tailATM = dATM.Edges.TailAtomIndex;
-
-% Reaction column indices
-[~, rxnCols] = ismember(dATM.Edges.rxns, model.rxns);
-
-% Build CRB2R from a sparse atom -> reaction incidence: row i holds the reactions with
-% an atom transition that touches either end atom of condensed reacting bond i. This
-% replaces a scan of every atom transition for every bond. The original per-bond loop
-% is kept for inputs whose indices are not positive whole numbers.
-isPositiveWholeNumeric = @(v) isnumeric(v) && all(v(:) >= 1) && all(v(:) == fix(v(:)));
-if isPositiveWholeNumeric(atom1_all) && isPositiveWholeNumeric(atom2_all) ...
-        && isPositiveWholeNumeric(headATM) && isPositiveWholeNumeric(tailATM) ...
-        && isPositiveWholeNumeric(bondIdx) && all(bondIdx <= maxBondIndex)
-    rowsInBG = bondRowMap(bondIdx);
-    foundInBG = rowsInBG > 0;
-    for iMissing = find(~foundInBG)'
-        warning('BondIndex %d not found.', bondIdx(iMissing));
+if strcmp(reactingBondIncidence, 'bondChange')
+    % Rahou et al. 2026, Sec. 6.1, eq. 32: a condensed reacting bond belongs to exactly the
+    % reactions that break, form or change the order of a reacting bond merged into it.
+    % A broken bonding interaction is a dBTM edge whose TailMet is a reaction (the bond is
+    % HeadBondIndex), a formed one an edge whose HeadMet is a reaction (bond TailBondIndex);
+    % an order change is one broken or formed interaction of a multiple bond.
+    brokenBool = ismember(dBTM.Edges.TailMet, model.rxns);
+    formedBool = ismember(dBTM.Edges.HeadMet, model.rxns);
+    changedBond = full([dBTM.Edges.HeadBondIndex(brokenBool); dBTM.Edges.TailBondIndex(formedBool)]);
+    [~, changedCol] = ismember([dBTM.Edges.rxns(brokenBool); dBTM.Edges.rxns(formedBool)], model.rxns);
+    clear brokenBool formedBool
+    % Condensed edge of each reacting bond, through its reacting bond edges (a double bond
+    % has two, with the same end components, so the same condensed edge)
+    nBonds = max([0; rbgBondIndex(:); changedBond(:)]);
+    firstRowOfBond = accumarray(rbgBondIndex(:), rbgEdgeToCondensed(:), [nBonds 1], @min, 0);
+    lastRowOfBond = accumarray(rbgBondIndex(:), rbgEdgeToCondensed(:), [nBonds 1], @max, 0);
+    if any(firstRowOfBond ~= lastRowOfBond)
+        error('identifyConservedReactingMoieties:bondOnTwoCondensedEdges', ...
+            'BondIndex %d is on two condensed reacting bonds.', ...
+            find(firstRowOfBond ~= lastRowOfBond, 1));
     end
-    validTr = rxnCols > 0;
-    nAtomsMax = max([0; atom1_all(:); atom2_all(:); headATM(:); tailATM(:)]);
-    atomToRxn = spones(sparse([headATM(validTr); tailATM(validTr)], ...
-        [rxnCols(validTr); rxnCols(validTr)], 1, nAtomsMax, nRxns));
-    foundIdx = find(foundInBG);
-    touch = atomToRxn(atom1_all(rowsInBG(foundIdx)), :) + atomToRxn(atom2_all(rowsInBG(foundIdx)), :);
-    [touchRow, touchCol] = find(touch);
-    CRB2R = sparse(foundIdx(touchRow), touchCol, 1, nCRB, nRxns);
+    changedRow = zeros(size(changedBond));
+    changedRow(changedBond > 0) = firstRowOfBond(changedBond(changedBond > 0));
+    onGraph = changedRow > 0 & changedCol > 0;
+    offGraphBondChanges = nnz(~onGraph);
+    CRB2R = spones(sparse(changedRow(onGraph), changedCol(onGraph), 1, nCRB, nRxns));
+    if offGraphBondChanges > 0
+        warning('identifyConservedReactingMoieties:offGraphBondChanges', ...
+            ['%d broken or formed bonding interactions in dBTM are on no condensed reacting ' ...
+            'bond and are left out of CRB2R (reacting.offGraphBondChanges).'], offGraphBondChanges);
+    end
+    clear changedBond changedCol changedRow onGraph firstRowOfBond lastRowOfBond
 else
-    for i = 1:nCRB
-        b = bondIdx(i);
+    % 'endAtom': the rule used before feature 20261106-092213-paper-reacting-bond-incidence
+    offGraphBondChanges = 0;
+    CRB2R = sparse(nCRB, nRxns);
 
-        % Lookup BG edge row
-        row = bondRowMap(b);
-        if row == 0
-            warning('BondIndex %d not found.', b);
-            continue;
+    % Atom transition data
+    headATM = dATM.Edges.HeadAtomIndex;
+    tailATM = dATM.Edges.TailAtomIndex;
+
+    % Reaction column indices
+    [~, rxnCols] = ismember(dATM.Edges.rxns, model.rxns);
+
+    % Build CRB2R from a sparse atom -> reaction incidence: row i holds the reactions with
+    % an atom transition that touches either end atom of condensed reacting bond i. This
+    % replaces a scan of every atom transition for every bond. The original per-bond loop
+    % is kept for inputs whose indices are not positive whole numbers.
+    isPositiveWholeNumeric = @(v) isnumeric(v) && all(v(:) >= 1) && all(v(:) == fix(v(:)));
+    if isPositiveWholeNumeric(atom1_all) && isPositiveWholeNumeric(atom2_all) ...
+            && isPositiveWholeNumeric(headATM) && isPositiveWholeNumeric(tailATM) ...
+            && isPositiveWholeNumeric(bondIdx) && all(bondIdx <= maxBondIndex)
+        rowsInBG = bondRowMap(bondIdx);
+        foundInBG = rowsInBG > 0;
+        for iMissing = find(~foundInBG)'
+            warning('BondIndex %d not found.', bondIdx(iMissing));
         end
+        validTr = rxnCols > 0;
+        nAtomsMax = max([0; atom1_all(:); atom2_all(:); headATM(:); tailATM(:)]);
+        atomToRxn = spones(sparse([headATM(validTr); tailATM(validTr)], ...
+            [rxnCols(validTr); rxnCols(validTr)], 1, nAtomsMax, nRxns));
+        foundIdx = find(foundInBG);
+        touch = atomToRxn(atom1_all(rowsInBG(foundIdx)), :) + atomToRxn(atom2_all(rowsInBG(foundIdx)), :);
+        [touchRow, touchCol] = find(touch);
+        CRB2R = sparse(foundIdx(touchRow), touchCol, 1, nCRB, nRxns);
+    else
+        for i = 1:nCRB
+            b = bondIdx(i);
 
-        a1 = atom1_all(row);
-        a2 = atom2_all(row);
+            % Lookup BG edge row
+            row = bondRowMap(b);
+            if row == 0
+                warning('BondIndex %d not found.', b);
+                continue;
+            end
 
-        % Find transitions involving either atom
-        involved = (headATM == a1 | tailATM == a1 | ...
-                    headATM == a2 | tailATM == a2);
+            a1 = atom1_all(row);
+            a2 = atom2_all(row);
 
-        cols = unique(rxnCols(involved));
-        CRB2R(i, cols(cols>0)) = 1;
+            % Find transitions involving either atom
+            involved = (headATM == a1 | tailATM == a1 | ...
+                        headATM == a2 | tailATM == a2);
+
+            cols = unique(rxnCols(involved));
+            CRB2R(i, cols(cols>0)) = 1;
+        end
     end
 end
 
@@ -1868,6 +1967,8 @@ reacting.selectedReactionNames = model.rxns(selectedReactions);
 reacting.ReactMoietyMatrix = RM;
 reacting.ReactMoietySets = RM_sets;
 reacting.ReactMoietyGraphs = RM_graph;
+reacting.unchangedReactingBonds = ~any(CRB2R, 2);
+reacting.offGraphBondChanges = offGraphBondChanges;
 
 function subgraphs = selectBuiltSubgraphs(bondSubgraphs, idx)
 % The subgraphs idx of the first output of extractBondSubgraphs, as a column, as
