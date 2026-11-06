@@ -152,7 +152,7 @@ title('Bond Instance Graph (BIG)')
 options.sanityChecks = 0;
 
 [arm, moietyFormulae, reacting] = ...
-    identifyConservedReactingMoieties(subModel, BG, dATM, options);
+    identifyConservedReactingMoieties(subModel, BG, dATM, options, dBTM);
 
 disp('Moiety identification complete.')
 %% 8. Conserved Moieties (Paper Section 4)

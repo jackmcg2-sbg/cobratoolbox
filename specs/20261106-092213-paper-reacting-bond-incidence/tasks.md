@@ -41,7 +41,7 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 1: Setup
 
-- [ ] T001 Confirm `git merge-base --is-ancestor BASE HEAD` and `git diff --quiet BASE -- RM TESTDIR`, and archive `BASE`'s `RM` to `WORK/base`. Stop and report if a check fails.
+- [X] T001 Confirm `git merge-base --is-ancestor BASE HEAD` and `git diff --quiet BASE -- RM TESTDIR`, and archive `BASE`'s `RM` to `WORK/base`. Stop and report if a check fails.
 - [ ] T002 Start the full-network rebuild early, because it takes about 1 h 41 min (research R8). Create `FEATURE/rebuildWithBondTransitions.m`, a function `rebuildWithBondTransitions(checkpointFile, rxnDir, outFile)`:
   - **Model**: it loads `runModel` from `checkpointFile`.
   - **Build**: it runs the builder with the pipeline's options (`directed = 0`, `sanityChecks = 0`).
@@ -49,7 +49,7 @@ description: "Task list for the paper's reacting-bond incidence"
   - **Save**: `runModel`, `dATM`, `BG` and `dBTM`, with `-v7.3`, and the build time and peak RSS.
 
   Run it on a copy of `BASELINE/checkpoint_build.mat` with `VMHRXN` (24 GiB cap) into `WORK/vmh_with_dBTM.mat`.
-- [ ] T003 [P] Create `TESTDIR/data/rxnFilesTransport/` (research R6):
+- [X] T003 [P] Create `TESTDIR/data/rxnFilesTransport/` (research R6):
   - **Copies**: the three files of `TESTDIR/data/rxnFilesConsistentArms/`.
   - **`CITICITtm.rxn`**: hand-written. Its reactants are `cit[c]` and `icit[m]`, its products `cit[m]` and `icit[c]`. The molblocks are copied from the consistent-arm `cit[m]` and `icit[m]` blocks, with the identifiers changed for the `[c]` copies. The atom map is the identity (atom k of each reactant maps to atom k of the same metabolite among the products).
   - **Check**: run `checkABRXNFiles` on the folder and confirm it parses, and that the builder reports 0 broken and 0 formed bonds for `CITICITtm`.
@@ -58,14 +58,14 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 2: Tests first, on the unchanged source (US1, US2)
 
-- [ ] T004 [US1] Add a local helper to `TEST`, `expectedCondensedSets(model, dBTM, BG, arm, reacting)`. It returns each reaction's set of condensed reacting bonds, computed independently of `CRB2R`:
+- [X] T004 [US1] Add a local helper to `TEST`, `expectedCondensedSets(model, dBTM, BG, arm, reacting)`. It returns each reaction's set of condensed reacting bonds, computed independently of `CRB2R`:
   - take the broken and formed interactions from `dBTM` (research R1);
   - map each bond, through `BG` end atoms and `arm.ATG.Nodes.Component`, to a component pair;
   - map the component pairs to `Condensed_RBG` edges by the pairs of all reacting bonds merged into each edge, which is the union rule (R3).
 
   It also returns the count of interactions that fall on no edge.
-- [ ] T005 [US1] Add a `%%` section to `TEST` for the shipped files: for each reaction, assert that its `CRB2R` column equals `expectedCondensedSets`. Add a planted control: flipping one entry of a copy of `CRB2R` must be detected.
-- [ ] T006 [US1] Add a `%%` section to `TEST` for the transport (US1 AS1):
+- [X] T005 [US1] Add a `%%` section to `TEST` for the shipped files: for each reaction, assert that its `CRB2R` column equals `expectedCondensedSets`. Add a planted control: flipping one entry of a copy of `CRB2R` must be detected.
+- [X] T006 [US1] Add a `%%` section to `TEST` for the transport (US1 AS1):
   - **Model**: `addReaction` adds `CITICITtm` to the example model (`cit[c] + icit[m] -> cit[m] + icit[c]`).
   - **Build**: from `TESTDIR/data/rxnFilesTransport`.
   - **Asserts, in order**:
@@ -73,8 +73,8 @@ description: "Task list for the paper's reacting-bond incidence"
     2. the conserved $L$ over the original four metabolites is unchanged;
     3. the `CITICITtm` column of `CRB2R` is zero, and `CITICITtm` is not among `selectedReactionNames`;
     4. the other three columns equal the Fig. 11 sets, using the existing letter mapping.
-- [ ] T007 [US1] Add a `%%` section to `TEST` for the order change (US1 AS3). On the consistent-arm fixture, the condensed edge that holds cis-aconitate's C=C bond lists exactly the reactions `dBTM` records as changing an interaction of that bond. Assert both that edge's row and that the bond's `dBTM` changes are interactions of a multiple bond.
-- [ ] T008 [US1] Run `TEST` on the unchanged source and record the result per section in `FEATURE/paperIncidenceResults.md` under "Red before green". Expected:
+- [X] T007 [US1] Add a `%%` section to `TEST` for the order change (US1 AS3). On the consistent-arm fixture, the condensed edge that holds cis-aconitate's C=C bond lists exactly the reactions `dBTM` records as changing an interaction of that bond. Assert both that edge's row and that the bond's `dBTM` changes are interactions of a multiple bond.
+- [X] T008 [US1] Run `TEST` on the unchanged source and record the result per section in `FEATURE/paperIncidenceResults.md` under "Red before green". Expected:
   - **fail**: T005 (`ACONTm`, `r0317`, `r0426`) and T006 assert 3;
   - **pass**: Fig. 11, the conserved outputs and T006 asserts 1–2;
   - **T007**: either outcome, but recorded.
@@ -85,20 +85,20 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 3: Commit 1, the source change (US1)
 
-- [ ] T009 [US1] In `RM/identifyConservedReactingMoieties.m`, read and validate `options.reactingBondIncidence` (default `'bondChange'`), next to the `conservedMoietiesOnly` / `computeMoietyGraphs` checks:
+- [X] T009 [US1] In `RM/identifyConservedReactingMoieties.m`, read and validate `options.reactingBondIncidence` (default `'bondChange'`), next to the `conservedMoietiesOnly` / `computeMoietyGraphs` checks:
   - **Invalid value**: error `identifyConservedReactingMoieties:invalidReactingBondIncidence`.
   - **Optional input**: accept the trailing `dBTM`, detected with `exist`/`isempty`, not `nargin` (VII-D).
   - **Missing input**: in full mode with `'bondChange'` and no `dBTM`, error `identifyConservedReactingMoieties:missingBondTransitions`, with the message in the contract.
-- [ ] T010 [US1] In STEP 1, keep the third output of `unique(E_sorted, 'rows', 'stable')` as `rbgEdgeToCondensed` (plan, Design 2). Nothing else in STEP 1 changes.
-- [ ] T011 [US1] In STEP 3, add the `'bondChange'` branch (plan, Design 3):
+- [X] T010 [US1] In STEP 1, keep the third output of `unique(E_sorted, 'rows', 'stable')` as `rbgEdgeToCondensed` (plan, Design 2). Nothing else in STEP 1 changes.
+- [X] T011 [US1] In STEP 3, add the `'bondChange'` branch (plan, Design 3):
   - broken interactions (`TailMet` in `model.rxns`, bond `HeadBondIndex`) and formed ones (`HeadMet` in `model.rxns`, bond `TailBondIndex`);
   - reaction columns from `Edges.rxns`;
   - rows through the `RBG` edges' `BondIndex` and `rbgEdgeToCondensed`, asserting that each bond maps to at most one row;
   - `CRB2R = spones(sparse(...))`.
 
   Leave both existing `'endAtom'` code paths untouched.
-- [ ] T012 [US1] Add `reacting.unchangedReactingBonds` (`~any(CRB2R, 2)`, both rules) and `reacting.offGraphBondChanges` (`0` under `'endAtom'`). When the count is not zero, emit one warning, `identifyConservedReactingMoieties:offGraphBondChanges`, with the count (VII-B). Leave the cover's `activeBonds` as it is (FR-005).
-- [ ] T013 [US1] Help text and provenance (FR-010, VII-E):
+- [X] T012 [US1] Add `reacting.unchangedReactingBonds` (`~any(CRB2R, 2)`, both rules) and `reacting.offGraphBondChanges` (`0` under `'endAtom'`). When the count is not zero, emit one warning, `identifyConservedReactingMoieties:offGraphBondChanges`, with the count (VII-B). Leave the cover's `activeBonds` as it is (FR-005).
+- [X] T013 [US1] Help text and provenance (FR-010, VII-E):
   - **Header**: the `dBTM` input, `options.reactingBondIncidence` with both values, the two new fields and the paper reference (§6.1, eq. 32).
   - **Pipeline comment**: R5 rewritten for both rules.
   - **Provenance**: an author/provenance line for this feature.
@@ -107,18 +107,18 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 4: Commit 2, callers and the new interface's tests (US1, US2)
 
-- [ ] T014 [US2] Pass `dBTM` at every full-mode call in `TEST`: L239, L273, L535 and the transport section. The consistent-arm and MACACI builds must now return `dBTM` (eighth output). Leave the conserved-only calls (L101, L142, L165) without it.
-- [ ] T015 [P] [US2] Pass `dBTM` at the full-mode call in `TUT` (L155), with the builder call returning it.
-- [ ] T016 [US1] Add a `%%` section to `TEST` for the interface (FR-002, FR-006):
+- [X] T014 [US2] Pass `dBTM` at every full-mode call in `TEST`: L239, L273, L535 and the transport section. The consistent-arm and MACACI builds must now return `dBTM` (eighth output). Leave the conserved-only calls (L101, L142, L165) without it.
+- [X] T015 [P] [US2] Pass `dBTM` at the full-mode call in `TUT` (L155), with the builder call returning it.
+- [X] T016 [US1] Add a `%%` section to `TEST` for the interface (FR-002, FR-006):
   - a conserved-only call without `dBTM` runs;
   - a full-mode call without `dBTM` raises `missingBondTransitions`;
   - an invalid value raises `invalidReactingBondIncidence`;
   - on the shipped files, `'endAtom'` gives today's `CRB2R` (equal to `BASE`'s, captured in T008's run and stored inline as the expected component-pair sets).
-- [ ] T017 [US1] Add a `%%` section to `TEST` for FR-005:
+- [X] T017 [US1] Add a `%%` section to `TEST` for FR-005:
   - on the fixtures, `unchangedReactingBonds` is all false and `offGraphBondChanges` is 0;
   - **planted case**: on a copy of the consistent-arm `dBTM` with `ACONTm`'s energy edges removed, the bonds only `ACONTm` changes become `unchangedReactingBonds`, and the cover still succeeds;
   - **planted control**: an extra energy edge in a copied `dBTM` is detected by T005's assertion.
-- [ ] T018 [US1] Update `TEST`'s header (Purpose, behaviours, tier, Authors). Run `TEST`. All sections pass except the two golden comparisons, which are recaptured in Phase 5; record which fail. Commit commit 1 (T009–T013) and commit 2 (T014–T018) separately.
+- [X] T018 [US1] Update `TEST`'s header (Purpose, behaviours, tier, Authors). Run `TEST`. All sections pass except the two golden comparisons, which are recaptured in Phase 5; record which fail. Commit commit 1 (T009–T013) and commit 2 (T014–T018) separately.
 
 ---
 

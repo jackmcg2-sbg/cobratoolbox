@@ -33,3 +33,22 @@ The failures are exactly the expected ones, with the bond sets of research R3.
 `data/rxnFilesTransport` parses (the builder's RXN quality checks pass for all 4 files) and
 the builder records 0 broken and 0 formed bonding interactions for `CITICITtm` (2 and 2 for
 each of the other reactions).
+
+## After the source change (T018)
+
+Run on 2026-11-06 after T009–T017. The stored golden cases were logged instead of thrown (a
+scratch copy of the test whose `checkGoldenCase` prints the failure), so that the run reaches
+every other assertion.
+
+- **Passing**: every assertion outside the golden comparisons, including T005 (the shipped
+  files' sets), T006 (the transport), T007 (the order change), T016 (the two errors, the
+  `'endAtom'` sets of `ad0d11d60`, `'endAtom'` ignoring `dBTM`, conserved outputs independent
+  of the rule) and T017 (the new fields, and the planted case without the bond changes of
+  `ACONTm` and `r0317`).
+- **Failing, as expected until Phase 5**: the 12 full-mode golden cases of
+  `conservedReactingMoietiesReference.mat` (`mainDefault`, `mainDefaultSanity`) and
+  `reactingMoietyMemoryReference.mat` (`coaM`, `coaX`, `coaR`, `crn`, `crnM`, each `Full`
+  and `FullSanity`). They were captured without `dBTM`, so each raises `missingBondTransitions`.
+  The six `*Sanity` cases pin the error "Inconsistent mapping of atoms to connected
+  components.", which is raised after the options are read. With `dBTM` passed, they are
+  expected to raise it again (T019–T020). The conserved-only golden cases pass.
