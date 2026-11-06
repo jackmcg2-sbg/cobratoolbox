@@ -15,8 +15,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-  - Two remain: FR-003 (labelling of merged condensed edges) and FR-006 (keep the old rule as an option). Both are maintainer decisions; planning waits on them.
+- [x] No [NEEDS CLARIFICATION] markers remain
+  - FR-003 (union over merged bonds) and FR-006 (old rule kept as a non-default option) resolved by the maintainer, 2026-11-06 (spec Clarifications).
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)

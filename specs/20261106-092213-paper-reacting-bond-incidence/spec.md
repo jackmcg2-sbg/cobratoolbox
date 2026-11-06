@@ -40,7 +40,10 @@ $$\text{CRB2R}_{b,R} = 1 \iff b \in \mathcal{S}(R) \,\triangle\, \mathcal{P}(R)$
 
 ## Clarifications
 
-None yet. Two points need the maintainer's answer before planning; they are marked in the requirements (FR-003, FR-006).
+### Session 2026-11-06
+
+- Q: When several reacting bonds are merged into one condensed edge, which reactions does its `CRB2R` row hold? → A: the union of the reactions that change any of the merged bonds (FR-003).
+- Q: Does the current end-atom rule stay available? → A: yes, as a non-default option (FR-006).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -60,7 +63,7 @@ A researcher identifies reacting moieties on a network. For every condensed reac
    - the other three reactions' columns are the same as without the added reaction.
 
    Under the current rule, the added reaction's column marks every condensed reacting bond with an end atom on citrate. So this scenario fails on the unchanged source (red before green).
-2. **Given** any network, **When** reacting moieties are identified, **Then** for every condensed reacting bond $b$ and reaction $R$, $\text{CRB2R}_{b,R} = 1$ exactly when the builder's bond labels record $b$ (or, for a merged edge, one of the bonds merged into $b$; FR-003) as broken or formed in $R$.
+2. **Given** any network, **When** reacting moieties are identified, **Then** for every condensed reacting bond $b$ and reaction $R$, $\text{CRB2R}_{b,R} = 1$ exactly when the builder's bond labels record $b$ (or, for a merged edge, any of the bonds merged into $b$; FR-003) as broken or formed in $R$.
 3. **Given** a reaction that changes a bond's order without breaking it (a double bond becoming single), **When** reacting moieties are identified, **Then** that reaction is recorded against the condensed bond for the changed bonding interaction.
 
 ---
@@ -117,15 +120,15 @@ A maintainer wants to see what the change does at genome scale before reacting-m
 ### Functional Requirements
 
 - **FR-001**: `identifyConservedReactingMoieties` must set $\text{CRB2R}_{b,R} = 1$ exactly when reaction $R$ breaks, forms or changes the order of condensed reacting bond $b$, and 0 otherwise. Which bonds change in which reaction is taken from the per-reaction bond labels the builder already computes from the RXN files (broken −1, formed +1, conserved 0, with a double bond split into two bonding interactions). The rule "any atom transition of $R$ touches either end atom of $b$" is no longer the default.
-- **FR-002**: `identifyConservedReactingMoieties` must receive these per-reaction bond changes. The existing calls `(model, BG, dATM, options)` must keep working for conserved-moiety-only runs (`options.conservedMoietiesOnly = true`), which don't use `CRB2R`. In full mode without the bond changes, the function must stop with an error naming the missing input (VII-C), not fall back silently. The exception is when FR-006 keeps the old rule as an option and that option is chosen.
-- **FR-003**: When several atom-level reacting bonds fall on the same pair of atom-transition components, they are merged into one condensed edge, as today. Its row of `CRB2R` must be [NEEDS CLARIFICATION: the union of the reactions that change any of the merged bonds (recommended), or only the reactions that change the first merged bond (the current code keeps only the first `BondIndex`), or not merged at all, keeping one row per atom-level reacting bond (changes `Condensed_RBG`'s edge count). The paper doesn't say: its condensation matrix $Z$ (eq. 31) is not defined.]
+- **FR-002**: `identifyConservedReactingMoieties` must receive these per-reaction bond changes. The existing calls `(model, BG, dATM, options)` must keep working for conserved-moiety-only runs (`options.conservedMoietiesOnly = true`), which don't use `CRB2R`. In full mode without the bond changes, the function must stop with an error naming the missing input (VII-C), not fall back silently. The exception is `options.reactingBondIncidence = 'endAtom'` (FR-006).
+- **FR-003**: When several atom-level reacting bonds fall on the same pair of atom-transition components, they are merged into one condensed edge, as today. Its row of `CRB2R` must be the union of the reactions that change any of the merged bonds. The paper doesn't say how to label a merged edge (its condensation matrix $Z$, eq. 31, is not defined); the union loses no bond change. The current code keeps only the first merged bond's `BondIndex` and its two atoms; that choice is not kept.
 - **FR-004**: A new test fixture adds, to a copy of the paper's example, one reaction that moves a reacting bond's metabolite without changing any of its bonds (US1 AS1). The test is added to `testConservedReactingMoieties.m` (III-Naming), and it is written and shown to fail on the unchanged source before the change. A second assertion checks a bond-order change (US1 AS3) on an existing fixture reaction, or on a small added one if none exists.
 - **FR-005**: The `reacting` output must record which condensed reacting bonds no reaction changes (an index or logical vector), so a run can report them. These rows are left out of the cover's constraints.
-- **FR-006**: The current end-atom rule must be [NEEDS CLARIFICATION: kept as a non-default option (for example `options.reactingBondIncidence = 'bondChange'` (default) or `'endAtom'`), so earlier results can be reproduced (recommended); or removed, with the earlier behaviour available only from earlier commits.]
+- **FR-006**: The current end-atom rule must stay available as a non-default option, so earlier results can be reproduced: `options.reactingBondIncidence`, either `'bondChange'` (default, FR-001) or `'endAtom'` (today's rule, unchanged, including its use of the first merged bond only). With `'endAtom'` the per-reaction bond changes are not needed, and the reacting outputs must equal today's golden references (`isequaln`), so FR-008 keeps those beside the recaptured ones. An unknown value raises an error naming the option.
 - **FR-007**: Conserved-moiety outputs (`arm.L`, `arm.M2M`, `arm.M2R`, `moietyFormulae`, `arm.ATG`, `arm.MTG`, `arm.MG`) must be identical (`isequaln`) before and after on every fixture. Only `reacting` fields may change: `CRB2R`, the cover, `ReactMoietyMatrix`, `ReactMoietySets`, `ReactMoietyGraphs`, and the new field of FR-005. `Condensed_RBG` changes only if FR-003 chooses not to merge.
-- **FR-008**: Golden references whose `reacting` fields change are recaptured by a capture script in this feature's directory, with a per-field old-against-new difference report that is part of the review: `conservedReactingMoietiesReference.mat` (6 cases) and `reactingMoietyMemoryReference.mat` (10 cases). Their stored `BG` and `dATM` inputs are not rebuilt; the per-reaction bond changes are added to them from the same builder run.
+- **FR-008**: Golden references whose `reacting` fields change are recaptured by a capture script in this feature's directory, with a per-field old-against-new difference report that is part of the review: `conservedReactingMoietiesReference.mat` (6 cases) and `reactingMoietyMemoryReference.mat` (10 cases). Their stored `BG` and `dATM` inputs are not rebuilt; the per-reaction bond changes are added to them from the same builder run. Today's references are kept, under new names, for the `'endAtom'` test (FR-006).
 - **FR-009**: Non-CI check (US3): a script in this feature's directory runs the full collapsed VMH network and writes the report of US3 AS1–AS3. The project driver's build checkpoint does not save the bond transition multigraph, so the check rebuilds the multigraph (about 1 h 41 min) unless a checkpoint containing the bond changes is supplied.
-- **FR-010**: Help text and provenance follow VII-E. The function's header states the rule with its paper reference (§6.1, eq. 32), names the new input and the FR-005 output field, and drops the old R5 description "reactions whose atom transitions touch either endpoint atom".
+- **FR-010**: Help text and provenance follow VII-E. The function's header states the rule with its paper reference (§6.1, eq. 32), names the new input and the FR-005 output field, and describes `options.reactingBondIncidence`, with R5 rewritten: `'bondChange'` as the paper's rule, `'endAtom'` as "reactions whose atom transitions touch either endpoint atom".
 
 ### Key Entities
 
@@ -138,7 +141,7 @@ A maintainer wants to see what the change does at genome scale before reacting-m
 ### Measurable Outcomes
 
 - **SC-001**: On the fixture with the added non-changing reaction, that reaction's `CRB2R` column is zero and it is not in the cover. The same assertion fails on the unchanged source.
-- **SC-002**: On every CI fixture, each `CRB2R` row equals the set of reactions the RXN files label as changing that bond (or its merged bonds, per FR-003).
+- **SC-002**: On every CI fixture, each `CRB2R` row equals the set of reactions the RXN files label as changing that bond (or the union over its merged bonds, FR-003).
 - **SC-003**: The Fig. 11 test passes unchanged (4 vertices, 6 bonds, the three bond sets, a cover of 2).
 - **SC-004**: Conserved-moiety outputs are identical before and after on every fixture (FR-007), and on the full collapsed VMH network (US3 AS3).
 - **SC-005**: On the full collapsed VMH network, the report of US3 AS1–AS2 is produced. Every new `CRB2R` entry that doesn't come from a merged bond is also an entry of the old rule. The cover size and per-bond reaction counts are reported, not gated: there is no reference value for them.
@@ -169,7 +172,7 @@ A maintainer wants to see what the change does at genome scale before reacting-m
 | US2 / SC-003 | testConservedReactingMoieties.m (existing Fig. 11 test, unchanged) | buildAtomAndBondTransitionMultigraph, identifyConservedReactingMoieties |
 | FR-002 | testConservedReactingMoieties.m (conserved-only call without bond changes works; full mode without them errors) | identifyConservedReactingMoieties |
 | FR-005 | testConservedReactingMoieties.m (unchanged bonds recorded and left out of the cover) | identifyConservedReactingMoieties |
-| FR-006 | testConservedReactingMoieties.m (old rule reproduces the old reference, if kept) | identifyConservedReactingMoieties |
+| FR-006 | testConservedReactingMoieties.m (`'endAtom'` reproduces today's references; unknown value errors) | identifyConservedReactingMoieties |
 | FR-007, SC-004 | testConservedReactingMoieties.m (conserved outputs unchanged) + non-CI check | identifyConservedReactingMoieties |
 | FR-008, SC-006 | testConservedReactingMoieties.m (recaptured golden comparison) + difference report | identifyConservedReactingMoieties |
 | US3 / FR-009, SC-005 | non-CI check script in this feature's directory | identifyConservedReactingMoieties |
