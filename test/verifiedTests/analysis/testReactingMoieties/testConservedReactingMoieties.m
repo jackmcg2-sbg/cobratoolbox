@@ -216,6 +216,27 @@ for k = 1:numel(memoryReference.goldenCases)
         strcmp(memoryReference.goldenCases(k).milpSolver, CBT_MILP_SOLVER));
 end
 
+% --- feature 20261106-092213-paper-reacting-bond-incidence (FR-006, FR-008) ---
+% The two references above were recaptured under the paper's rule, the default (per-field
+% difference report: specs/20261106-092213-paper-reacting-bond-incidence/
+% goldenDifferenceReport.md). The references as they were before, kept as *EndAtom.mat, must
+% be reproduced exactly with options.reactingBondIncidence = 'endAtom' and no dBTM; the two
+% new reacting fields are checked by value. Conserved-only cases have no reacting stage and
+% are compared above.
+for referenceName = {'conservedReactingMoietiesReferenceEndAtom', 'reactingMoietyMemoryReferenceEndAtom'}
+    endAtomReference = load([fileDir filesep 'data' filesep referenceName{1} '.mat']);
+    for k = 1:numel(endAtomReference.goldenCases)
+        endAtomCase = endAtomReference.goldenCases(k);
+        if isfield(endAtomCase.options, 'conservedMoietiesOnly') && endAtomCase.options.conservedMoietiesOnly
+            continue
+        end
+        endAtomCase.options.reactingBondIncidence = 'endAtom';
+        endAtomCase.name = [endAtomCase.name ', endAtom'];
+        checkGoldenCase(endAtomCase, strcmp(endAtomCase.milpSolver, CBT_MILP_SOLVER));
+    end
+end
+clear endAtomReference endAtomCase referenceName
+
 % planted differences: isequaln must report each one, so the comparisons above can fail
 hasControlData = arrayfun(@(c) strcmp(c.outcome, 'ok') && ~isempty(c.arm.MG) && ...
     nnz(c.arm.L) > 0 && ~isempty(c.reacting.ReactMoietyGraphs), memoryReference.goldenCases);
@@ -784,12 +805,15 @@ cd(currentDir);
 
 function checkGoldenCase(goldenCase, compareReacting)
 % Assert that identifyConservedReactingMoieties gives the captured outputs, or raises the
-% captured error, on one golden case
+% captured error, on one golden case. The case's dBTM is passed as the fifth input: the
+% stored one, or, for a full-mode case of a reference that stores none, one rebuilt from the
+% fixture RXN files (feature 20261106-092213, research R7). A case under 'endAtom' gets none.
+dBTM = goldenCaseBondTransitions(goldenCase);
 if strcmp(goldenCase.outcome, 'error')
     errorRaised = false;
     try
         identifyConservedReactingMoieties(goldenCase.model, goldenCase.BG, goldenCase.dATM, ...
-            goldenCase.options);
+            goldenCase.options, dBTM);
     catch ME
         errorRaised = true;
         assert(strcmp(ME.identifier, goldenCase.errorIdentifier) && ...
@@ -803,18 +827,49 @@ if strcmp(goldenCase.outcome, 'error')
     return
 end
 [arm, moietyFormulae, reacting] = identifyConservedReactingMoieties(goldenCase.model, ...
-    goldenCase.BG, goldenCase.dATM, goldenCase.options);
+    goldenCase.BG, goldenCase.dATM, goldenCase.options, dBTM);
 assert(isequaln(arm, goldenCase.arm), ...
     sprintf('arm differs from the captured reference (%s).', goldenCase.name));
 assert(isequaln(moietyFormulae, goldenCase.moietyFormulae), ...
     sprintf('moietyFormulae differs from the captured reference (%s).', goldenCase.name));
 if compareReacting
+    newFields = {'unchangedReactingBonds', 'offGraphBondChanges'};
+    if isstruct(goldenCase.reacting) && isfield(reacting, newFields{1}) && ...
+            ~isfield(goldenCase.reacting, newFields{1})
+        % a reference captured before feature 20261106-092213: the new fields by value
+        assert(isequal(reacting.unchangedReactingBonds, ~any(reacting.CRB2R, 2)) && ...
+            reacting.offGraphBondChanges == 0, sprintf(['The new reacting fields are wrong ' ...
+            'under ''endAtom'' (%s).'], goldenCase.name));
+        reacting = rmfield(reacting, newFields);
+    end
     assert(isequaln(reacting, goldenCase.reacting), ...
         sprintf('reacting differs from the captured reference (%s).', goldenCase.name));
 else
     fprintf('%s: reacting not compared (MILP solver differs from the captured %s).\n', ...
         goldenCase.name, goldenCase.milpSolver);
 end
+end
+
+function dBTM = goldenCaseBondTransitions(goldenCase)
+% The dBTM to pass for a golden case: none under 'endAtom' or for a conserved-only case, the
+% stored one, or one rebuilt from the fixture RXN files, from which the case's BG and dATM
+% were built (directed = 0, sanityChecks = 1, as at their capture)
+dBTM = [];
+options = goldenCase.options;
+if (isfield(options, 'reactingBondIncidence') && strcmp(options.reactingBondIncidence, 'endAtom')) || ...
+        (isfield(options, 'conservedMoietiesOnly') && options.conservedMoietiesOnly)
+    return
+end
+if isfield(goldenCase, 'dBTM') && ~isempty(goldenCase.dBTM)
+    dBTM = goldenCase.dBTM;
+    return
+end
+rxnFilesDir = [fileparts(which('testConservedReactingMoieties')) filesep 'data' filesep 'rxnFiles'];
+[dATM, ~, ~, ~, ~, ~, BG, dBTM] = buildAtomAndBondTransitionMultigraph(goldenCase.model, ...
+    rxnFilesDir, struct('directed', 0, 'sanityChecks', 1));
+assert(isequaln(BG, goldenCase.BG) && isequaln(dATM, goldenCase.dATM), sprintf(['The rebuilt ' ...
+    'BG or dATM of %s differs from the stored one, so the rebuilt dBTM cannot be used.'], ...
+    goldenCase.name));
 end
 
 function [changedBonds, changingRxns] = bondChanges(model, dBTM)

@@ -124,7 +124,7 @@ description: "Task list for the paper's reacting-bond incidence"
 
 ## Phase 5: Commit 3, golden references (US1, US2)
 
-- [ ] T019 [US1] Create `FEATURE/capturePaperIncidenceGoldens.m` (plan, Design 6; research R7). It:
+- [X] T019 [US1] Create `FEATURE/capturePaperIncidenceGoldens.m` (plan, Design 6; research R7). It:
   1. asserts `git diff --quiet HEAD -- RM`;
   2. copies today's `conservedReactingMoietiesReference.mat` and `reactingMoietyMemoryReference.mat` to `*EndAtom.mat`;
   3. for each case, rebuilds `dBTM` from `TESTDIR/data/rxnFiles`, asserting that the stored `BG` and `dATM` are reproduced (`isequaln`);
@@ -132,10 +132,10 @@ description: "Task list for the paper's reacting-bond incidence"
   5. writes `FEATURE/goldenDifferenceReport.md`, listing per case each changed field, before and after.
 
   If the two new files together exceed 10 MB, store no `dBTM`; the helper rebuilds it per case instead. The report records which.
-- [ ] T020 [US1] Update the golden helper in `TEST`:
+- [X] T020 [US1] Update the golden helper in `TEST`:
   - pass `goldenCase.dBTM`, or the rebuilt one;
   - add the `'endAtom'` comparison against `*EndAtom.mat` (FR-006), passing no `dBTM`.
-- [ ] T021 [US1] Review `goldenDifferenceReport.md`. Only `reacting` fields may change; any `arm` or `moietyFormulae` difference stops the work (FR-007). Run every test in `TESTDIR`; all must pass (SC-006). Commit (commit 3).
+- [X] T021 [US1] Review `goldenDifferenceReport.md`. Only `reacting` fields may change; any `arm` or `moietyFormulae` difference stops the work (FR-007). Run every test in `TESTDIR`; all must pass (SC-006). Commit (commit 3).
 
 ---
 

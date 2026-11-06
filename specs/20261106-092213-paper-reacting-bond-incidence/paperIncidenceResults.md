@@ -52,3 +52,34 @@ every other assertion.
   The six `*Sanity` cases pin the error "Inconsistent mapping of atoms to connected
   components.", which is raised after the options are read. With `dBTM` passed, they are
   expected to raise it again (T019–T020). The conserved-only golden cases pass.
+
+## Golden references (T019–T021)
+
+`capturePaperIncidenceGoldens.m` ran on 2026-11-06 from head `3bbe50978`, with Gurobi. The
+per-case, per-field table is [goldenDifferenceReport.md](goldenDifferenceReport.md).
+
+- **Inputs reproduced**: for every case the rebuilt `BG` and `dATM` were `isequaln` to the
+  stored ones, so the rebuilt `dBTM` belongs to the same build.
+- **FR-007**: in all 18 cases the outcome is unchanged, each pinned error has the same
+  identifier and message, and every `arm` and `moietyFormulae` field is unchanged.
+- **What changed**: only `reacting`, in the 6 full-mode cases that run (`mainDefault`,
+  `coaMFull`, `coaXFull`, `coaRFull`, `crnFull`, `crnMFull`), plus the two new fields.
+  `CRB2R` loses most of its entries on the bond-key fixtures. For example, `coaMFull` goes from
+  262 nonzeros to 21 and `coaXFull` from 374 to 46. `crnMFull`'s cover shrinks from
+  {`PPACOAATREVm`, `HMR_2634`} to {`PPACOAATREVm`}.
+- **Unchanged reacting bonds**: on the bond-key fixtures, most condensed reacting bonds belong
+  to no reaction under the paper's rule (79 of 98 in `coaMFull`, 85 of 124 in `coaXFull`, 79
+  of 95 in `coaRFull`, 24 of 34 in `crnFull`). These bonds carry the reacting label
+  (`IsomorphismClass == 0`), but no reaction of the fixture breaks or forms them. They are left
+  out of the cover, as rows with no reaction were before.
+- **No bond changes off the graph**: `offGraphBondChanges` is 0 in every case.
+- **Storage**: both references store `dBTM`, 2.60 MB together (limit 10 MB). Today's files
+  are kept unchanged as `*EndAtom.mat`.
+
+**Test folder (SC-006)**: every one of the 17 test files in `testReactingMoieties` passes
+under COBRA's own runner (`runScriptFile`, as `runTestSuite` calls it), with this worktree's
+source and tests first on the path. Under MATLAB's `runtests`, three sections of two files
+this feature does not touch fail: `testBuildAtomAndBondTransitionMultigraph` (`test_i`,
+`test_j`) and `testFindConservedBondGroup` (`plantedDifference`). They fail because
+`runtests` does not carry a variable from one `%%` section into the next (`molfileOptions`,
+`syntheticCases`). Those files and the functions they test are identical to `ad0d11d60`.
