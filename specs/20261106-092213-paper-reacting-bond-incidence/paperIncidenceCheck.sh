@@ -9,8 +9,8 @@
 #   endAtom     identification under 'endAtom', compared with <baselineRunDir> (T023, equality control)
 #   bondChange  identification under 'bondChange' (T024)
 #   report      the US3 metrics into paperIncidenceResults.md (T024)
-# Nothing is written to <baselineRunDir> or rxnDir. A run with cap C starts only when C + 8 GB
-# is available (waiting up to 3 h).
+# Nothing is written to <baselineRunDir> or rxnDir. A run with cap C starts only when C + MARGIN_GB
+# (default 8) GB is available (waiting up to 3 h).
 set -uo pipefail
 mode=$1
 baseline=$(cd "$2" && pwd)
@@ -25,7 +25,7 @@ setup="cd('$HOME/cobratoolbox'); initCobraToolbox(false); changeCobraSolver('gur
 
 run_matlab() { # tag cap timeLimit command
     local tag=$1 cap=$2 limit=$3 cmd=$4 out=$work/runs/$1
-    local needGiB=$(( ${cap%G} + 8 )) availableGiB waited=0
+    local needGiB=$(( ${cap%G} + ${MARGIN_GB:-8} )) availableGiB waited=0
     availableGiB=$(free -g | awk '/^Mem:/ {print $7}')
     while (( availableGiB < needGiB && waited < 10800 )); do
         sleep 60; waited=$(( waited + 60 ))

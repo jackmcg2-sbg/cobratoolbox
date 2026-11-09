@@ -103,3 +103,48 @@ this feature does not touch fail: `testBuildAtomAndBondTransitionMultigraph` (`t
   now, and `runTestSuite` does not run it (it runs only `verifiedTests`). A scratch copy with
   `data/rxnFiles` linked to the test's shipped fixture passes under `runScriptFile`, including
   the changed call that passes `dBTM`.
+
+## Full-network rebuild and equality control (T002, T023)
+
+Run 2026-11-09 in `WORK` (outside the repository), each step in its own memory-capped scope.
+The rebuild ran with a 4 GB margin instead of 8 GB (`MARGIN_GB=4`), because about 28 GB was
+available while GraphDB and the mol-search service were running.
+
+| Step | Result | Time | Peak |
+|---|---|---|---|
+| T002 rebuild (`rebuildWithBondTransitions`, 24 GiB cap) | `REBUILD EQUAL 1`: the rebuilt `dATM` and `BG` are `isequaln` to the checkpoint's; `dBTM` has 571525 vertices and 1335665 edges | build 5602 s | VmHWM 7.7 GiB; scope 21.4 GiB, including the page cache of the 10.3 GB `-v7.3` save |
+| T023 `identify`, `'endAtom'` | exit 0 | 942 s | 15.1 GiB (scope) |
+| T023 `compare` with the 2026-11-05 baseline | `PI ALL EQUAL 1`: every `reacting` field, `L` and `moietyFormulae` equal | 17 s | 2.2 GiB |
+
+The equality control passed, so the baseline run's earlier end-atom rule is reproduced from
+the rebuilt inputs, and T024's differences are due to the rule alone.
+
+## Full collapsed VMH network (T024)
+
+Run 2026-11-09 12:52. Old: `'endAtom'` (equal to the 2026-11-05 baseline, T023). New: `'bondChange'`.
+
+| Metric | Old (`endAtom`) | New (`bondChange`) |
+|---|---|---|
+| Condensed reacting bonds | 38963 | 38963 |
+| `CRB2R` nonzeros | 109877 | 68624 |
+| Reactions per bond, largest | 5195 | 8301 |
+| Reactions per bond, median over all bonds | 2 | 0 |
+| Reactions per bond, median over bonds with any | 2 | 1 |
+| `unchangedReactingBonds` | 0 | 23125 |
+| `offGraphBondChanges` | 0 | 0 |
+| Cover size (selected reactions) | 2399 | 2791 |
+| Identification time (s) | 942 | 856 |
+| Peak RSS of identification (GiB) | 11.4 | 14.5 |
+
+- **Subset test**: 42894 new entries are not old entries; 42894 of them are union-only (the reaction changes a merged bond other than the condensed edge's first bond), 0 others (must be 0).
+- **Old entries dropped**: 84147.
+- **Independent check**: `CRB2R` equals the sets recomputed from the bond changes' component pairs: 1 (pairs unique: 1; off-graph by pairs 0).
+- **Conserved outputs** (`L`, `M2M`, `M2R`, `moietyFormulae`) identical under both rules: 1.
+- **Largest rows**: the five condensed bonds with the most reactions under the new rule (8301,
+  6203, 6145, 5919, 5344) all join atom-transition components 16, 18, 33 and 37 (component 33
+  to itself in one of them). By the union rule (FR-003), a row collects every reaction that
+  changes any bond merged into that edge, so edges between large components collect thousands
+  of reactions. Under the end-atom rule the largest row had 5195.
+- **Cover**: larger (2399 → 2791). The 23125 unchanged reacting bonds have empty rows and are
+  left out of the cover, but each reaction now covers only the condensed bonds it changes, so
+  fewer bonds per reaction need more reactions to cover the rest.

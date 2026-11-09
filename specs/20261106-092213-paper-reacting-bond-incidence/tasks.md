@@ -42,7 +42,7 @@ description: "Task list for the paper's reacting-bond incidence"
 ## Phase 1: Setup
 
 - [X] T001 Confirm `git merge-base --is-ancestor BASE HEAD` and `git diff --quiet BASE -- RM TESTDIR`, and archive `BASE`'s `RM` to `WORK/base`. Stop and report if a check fails.
-- [ ] T002 Start the full-network rebuild early, because it takes about 1 h 41 min (research R8). Create `FEATURE/rebuildWithBondTransitions.m`, a function `rebuildWithBondTransitions(checkpointFile, rxnDir, outFile)`:
+- [X] T002 Start the full-network rebuild early, because it takes about 1 h 41 min (research R8). Create `FEATURE/rebuildWithBondTransitions.m`, a function `rebuildWithBondTransitions(checkpointFile, rxnDir, outFile)`:
   - **Model**: it loads `runModel` from `checkpointFile`.
   - **Build**: it runs the builder with the pipeline's options (`directed = 0`, `sanityChecks = 0`).
   - **Equality check**: it asserts that the rebuilt `dATM` and `BG` are `isequaln` to the checkpoint's, and stops if not.
@@ -147,8 +147,8 @@ description: "Task list for the paper's reacting-bond incidence"
   - **`report`**: the US3 metrics into `FEATURE/paperIncidenceResults.md`.
 
   The `.sh` script runs each action in its own scope under a 24 GiB cap, and starts only when at least 32 GB is free.
-- [ ] T023 [US3] Run `identify` with `'endAtom'` and `compare` it against `BASELINE/moieties_Qconserved_graphsOn_reacting/reacting.mat` and `conserved_moieties.mat` (equality control, research R8). Any difference stops the work and is reported with the field.
-- [ ] T024 [US3] Run `identify` with `'bondChange'`, then `report` (US3 AS1–AS3, SC-004, SC-005):
+- [X] T023 [US3] Run `identify` with `'endAtom'` and `compare` it against `BASELINE/moieties_Qconserved_graphsOn_reacting/reacting.mat` and `conserved_moieties.mat` (equality control, research R8). Any difference stops the work and is reported with the field.
+- [X] T024 [US3] Run `identify` with `'bondChange'`, then `report` (US3 AS1–AS3, SC-004, SC-005):
   - **`CRB2R`**: the number of condensed reacting bonds, and the nonzeros old against new;
   - **Reactions per bond**: the largest and median, old and new;
   - **Cover size**: old (2,399) against new;
@@ -168,7 +168,7 @@ description: "Task list for the paper's reacting-bond incidence"
   - the `'endAtom'` lines of STEP 3 are byte-identical to `BASE`'s;
   - no `nargin`, `evalc` or warning suppression;
   - every new error has an identifier.
-- [ ] T026 [P] Run the quickstart's scenarios 1–3, and confirm that scenario 4's output is the T024 report.
+- [X] T026 [P] Run the quickstart's scenarios 1–3, and confirm that scenario 4's output is the T024 report.
 - [ ] T027 Write the implementation receipt in `FEATURE/agent-runs/<UTC>-paper-reacting-bond-incidence/implementation-receipt.md`, and finish `FEATURE/paperIncidenceResults.md`. Open the PR into the fork's `develop`. List as follow-ups:
   - the reconXmoieties driver must pass `dBTM` and save it in the build checkpoint;
   - the tutorial source repository (`tutorials/`) needs the same call change;
